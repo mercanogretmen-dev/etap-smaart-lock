@@ -26,6 +26,7 @@ echo "📁 Program dosyaları ${INSTALL_DIR} dizinine kopyalanıyor..."
 mkdir -p "$INSTALL_DIR"
 cp -r ./* "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/kilit_ekrani.py"
+chmod -R 777 "$INSTALL_DIR"
 
 # 3. Otomatik Başlatma (Autostart) Kaydı Oluştur
 AUTOSTART_FILE="/etc/xdg/autostart/etap-smartlock.desktop"

@@ -21,7 +21,7 @@ try:
 except ImportError:
     websockets = None
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate, QProcess
 from PyQt6.QtGui import QFont, QPixmap, QImage, QKeyEvent, QColor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -29,26 +29,61 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFrame, QGraphicsDropShadowEffect
 )
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
+USER_CONFIG_DIR = os.path.expanduser("~/.config/etap-smartlock")
+USER_CONFIG_PATH = os.path.join(USER_CONFIG_DIR, "config.ini")
+LOCAL_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.ini")
+
+def get_active_config_path():
+    """Önce kullanıcı dizinini, yoksa yerel dizini döner."""
+    if os.path.exists(USER_CONFIG_PATH):
+        return USER_CONFIG_PATH
+    return LOCAL_CONFIG_PATH
 
 def load_config():
     config = configparser.ConfigParser()
-    if os.path.exists(CONFIG_PATH):
-        config.read(CONFIG_PATH, encoding="utf-8")
-    else:
-        config["GENEL"] = {
-            "sinif_adi": "9-A",
-            "sunucu_ws_url": "ws://localhost:8000/ws/board/",
-            "ogretmen_pin": "1234",
-            "yonetici_sifre": "admin123"
-        }
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            config.write(f)
+    path_to_read = get_active_config_path()
+    if os.path.exists(path_to_read):
+        try:
+            config.read(path_to_read, encoding="utf-8")
+        except Exception as e:
+            print(f"Config okuma hatası: {e}")
+
+    if "GENEL" not in config:
+        config["GENEL"] = {}
+
+    defaults = {
+        "sinif_adi": "9-A",
+        "sunucu_ws_url": "wss://etap-smaart-lock.onrender.com/ws/board/",
+        "ogretmen_pin": "1234",
+        "yonetici_sifre": "admin123"
+    }
+    for k, v in defaults.items():
+        if k not in config["GENEL"]:
+            config["GENEL"][k] = v
+
     return config
 
 def save_config(config):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        config.write(f)
+    """Hem yerel klasöre (izin varsa) hem de garanti olsun diye ~/.config/ dizinine kaydeder."""
+    success = False
+    # 1. Yerel program dizinine yazmayı dene (/opt veya proje klasörü)
+    try:
+        with open(LOCAL_CONFIG_PATH, "w", encoding="utf-8") as f:
+            config.write(f)
+        success = True
+    except (PermissionError, OSError):
+        pass
+
+    # 2. Pardus'ta kısıtlı kullanıcı durumunda ~/.config/etap-smartlock/ dizinine yaz (her zaman yazılabilir)
+    try:
+        os.makedirs(USER_CONFIG_DIR, exist_ok=True)
+        with open(USER_CONFIG_PATH, "w", encoding="utf-8") as f:
+            config.write(f)
+        success = True
+    except Exception as e:
+        print(f"Kullanıcı config yazma hatası: {e}")
+
+    return success
 
 
 # -------------------------------------------------------------
@@ -77,17 +112,30 @@ class WebSocketClientThread(QThread):
                     self.signal_status.emit(True)
                     while self.running:
                         try:
-                            msg_text = await ws.recv()
+                            # 1 saniyelik timeout ile mesaj bekle, böylece self.running kontrol edilebilir
+                            msg_text = await asyncio.wait_for(ws.recv(), timeout=1.0)
                             data = json.loads(msg_text)
                             self.signal_command.emit(data)
-                        except websockets.ConnectionClosed:
+                        except asyncio.TimeoutError:
+                            continue
+                        except (websockets.ConnectionClosed, Exception):
                             break
             except Exception:
                 self.signal_status.emit(False)
-                await asyncio.sleep(4)  # 4 saniye sonra tekrar bağlanmayı dene
+                # Bekleme süresinde de çıkışı hızlı yakalamak için parçalı bekle
+                for _ in range(8):
+                    if not self.running:
+                        break
+                    await asyncio.sleep(0.5)
 
     def stop(self):
         self.running = False
+        try:
+            if self.isRunning():
+                self.quit()
+                self.wait(1000)
+        except Exception:
+            pass
 
 
 # -------------------------------------------------------------
@@ -165,7 +213,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.input_url)
 
         btn_box = QHBoxLayout()
-        btn_save = QPushButton("Kaydet ve Yeniden Başlat")
+        btn_save = QPushButton("💾 Kaydet ve Uygula")
         btn_save.setStyleSheet("background: #10b981; color: white; padding: 10px; font-weight: bold; border-radius: 6px;")
         btn_save.clicked.connect(self.accept)
 
@@ -501,16 +549,30 @@ class LockScreenWindow(QMainWindow):
             self.clear_pin()
             dlg = SettingsDialog(self.sinif_adi, self.sunucu_url, self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
-                self.sinif_adi = dlg.input_board.text().strip() or "9-A"
-                self.sunucu_url = dlg.input_url.text().strip()
+                new_board = dlg.input_board.text().strip() or "9-A"
+                new_url = dlg.input_url.text().strip()
+                self.sinif_adi = new_board
+                self.sunucu_url = new_url
                 self.cfg.set("GENEL", "sinif_adi", self.sinif_adi)
                 self.cfg.set("GENEL", "sunucu_ws_url", self.sunucu_url)
+                
+                # Dosyaya kalıcı kaydet
                 save_config(self.cfg)
+                
+                # Ekranda tahta adını anında güncelle
                 self.lbl_class.setText(f"🖥️ {self.sinif_adi}")
                 self.generate_qr()
-                # WebSocket'i yeni adres/isimle yeniden başlat
-                self.ws_thread.stop()
+                
+                # WebSocket'i yeni isimle hemen yeniden başlat
+                if hasattr(self, "ws_thread") and self.ws_thread:
+                    self.ws_thread.stop()
                 self.init_network()
+
+                QMessageBox.information(
+                    self,
+                    "Ayarlar Kaydedildi",
+                    f"✅ Tahta adı '{self.sinif_adi}' olarak güncellendi ve sunucuya yeni isimle bağlanılıyor!"
+                )
         else:
             self.pin_display.setText("ŞİFRE GİRİN")
             QTimer.singleShot(1500, self.clear_pin)
@@ -519,6 +581,10 @@ class LockScreenWindow(QMainWindow):
     # 🛑 Sistem Tuşlarını Engelleme (Kiosk Güvenliği)
     # -------------------------------------------------------------
     def keyPressEvent(self, event: QKeyEvent):
+        # Geliştirici / Yetkili Acil Çıkış Kısayolu: Ctrl+Q
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Q:
+            QApplication.quit()
+            return
         # Alt+F4 veya Esc ile kapatmayı engelle
         if event.key() == Qt.Key.Key_Escape:
             event.ignore()
