@@ -37,29 +37,48 @@ app.add_middleware(
 # -------------------------------------------------------------
 class BoardConnectionManager:
     def __init__(self):
-        # board_id -> WebSocket
+        # board_id (benzersiz cihaz kimliği) -> WebSocket
         self.active_connections: Dict[str, WebSocket] = {}
         # board_id -> son görülme zamanı (timestamp)
         self.board_last_seen: Dict[str, float] = {}
         # board_id -> kilit durumu ("locked" veya "unlocked")
         self.board_status: Dict[str, str] = {}
+        # board_id -> sınıf/tahta görünen adı (Örn: "9-A")
+        self.board_names: Dict[str, str] = {}
 
-    async def connect(self, board_id: str, websocket: WebSocket):
+    async def connect(self, board_id: str, websocket: WebSocket, name: Optional[str] = None):
         await websocket.accept()
         self.active_connections[board_id] = websocket
         self.board_last_seen[board_id] = time.time()
         self.board_status[board_id] = "locked"
-        logger.info(f"🟢 Tahta bağlandı: [{board_id}] (Toplam bağlı: {len(self.active_connections)})")
+        self.board_names[board_id] = name or self.board_names.get(board_id, board_id)
+        logger.info(f"🟢 Tahta bağlandı: [{board_id}] ('{self.board_names[board_id]}') (Toplam bağlı: {len(self.active_connections)})")
+
+    def update_name(self, board_id: str, new_name: str):
+        old_name = self.board_names.get(board_id, board_id)
+        self.board_names[board_id] = new_name
+        logger.info(f"✏️ Tahta adı güncellendi: [{board_id}] '{old_name}' -> '{new_name}'")
 
     def disconnect(self, board_id: str):
         if board_id in self.active_connections:
             del self.active_connections[board_id]
         if board_id in self.board_status:
             del self.board_status[board_id]
-        logger.info(f"🔴 Tahta ayrıldı: [{board_id}]")
+        if board_id in self.board_last_seen:
+            del self.board_last_seen[board_id]
+        logger.info(f"🔴 Tahta ayrıldı ve listeden temizlendi: [{board_id}]")
 
     def is_connected(self, board_id: str) -> bool:
         return board_id in self.active_connections
+
+    def find_board(self, identifier: str) -> Optional[str]:
+        """Hem cihaz ID'sine (etap-xxx) hem de sınıf adına ('9-A') göre aktif tahtayı bulur"""
+        if identifier in self.active_connections:
+            return identifier
+        for b_id, name in self.board_names.items():
+            if name.strip().lower() == identifier.strip().lower() and b_id in self.active_connections:
+                return b_id
+        return None
 
     async def send_to_board(self, board_id: str, message: dict) -> bool:
         if board_id in self.active_connections:
@@ -86,16 +105,36 @@ class BoardConnectionManager:
             self.disconnect(b_id)
         return success_count
 
-    def get_online_boards(self) -> List[dict]:
+    def get_online_boards(self, online_only: bool = True) -> List[dict]:
         boards = []
-        for b_id, last_time in self.board_last_seen.items():
+        if online_only:
+            target_ids = list(self.active_connections.keys())
+        else:
+            target_ids = list(set(list(self.active_connections.keys()) + list(self.board_last_seen.keys())))
+
+        for b_id in target_ids:
             boards.append({
                 "id": b_id,
+                "name": self.board_names.get(b_id, b_id),
                 "status": self.board_status.get(b_id, "locked"),
                 "online": b_id in self.active_connections,
-                "last_seen": int(last_time)
+                "last_seen": int(self.board_last_seen.get(b_id, time.time()))
             })
         return boards
+
+    def cleanup_offline(self) -> int:
+        removed = 0
+        all_ids = set(list(self.board_last_seen.keys()) + list(self.board_names.keys()))
+        for b_id in all_ids:
+            if b_id not in self.active_connections:
+                if b_id in self.board_last_seen:
+                    del self.board_last_seen[b_id]
+                if b_id in self.board_names:
+                    del self.board_names[b_id]
+                if b_id in self.board_status:
+                    del self.board_status[b_id]
+                removed += 1
+        return removed
 
 
 manager = BoardConnectionManager()
@@ -122,14 +161,16 @@ class BroadcastRequest(BaseModel):
 # 🌐 WebSocket Uç Noktası (Pardus ETAP Tahtaları Buraya Bağlanır)
 # -------------------------------------------------------------
 @app.websocket("/ws/board/{board_id}")
-async def websocket_board_endpoint(websocket: WebSocket, board_id: str):
-    await manager.connect(board_id, websocket)
+async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Optional[str] = None):
+    initial_name = name or board_id
+    await manager.connect(board_id, websocket, initial_name)
     try:
         # Tahtaya ilk bağlantı onayı gönder
         await websocket.send_text(json.dumps({
             "action": "welcome",
             "board_id": board_id,
-            "message": f"Bağlantı kuruldu: {board_id}"
+            "name": manager.board_names.get(board_id, initial_name),
+            "message": f"Bağlantı kuruldu: {manager.board_names.get(board_id, initial_name)}"
         }))
 
         while True:
@@ -142,6 +183,10 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str):
 
                 if action == "status_update":
                     manager.board_status[board_id] = msg.get("status", "locked")
+                elif action == "update_name":
+                    new_name = msg.get("name", "").strip()
+                    if new_name:
+                        manager.update_name(board_id, new_name)
                 elif action == "ping":
                     await websocket.send_text(json.dumps({"action": "pong", "time": time.time()}))
             except json.JSONDecodeError:
@@ -157,11 +202,20 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str):
 # 📱 Mobil REST API Uç Noktaları (Öğretmen ve Müdür Telefonu)
 # -------------------------------------------------------------
 @app.get("/api/boards")
-async def list_boards():
-    """Çevrimiçi olan tüm akıllı tahtaları listeler"""
+async def list_boards(online_only: bool = True):
+    """Sadece çevrimiçi olan veya tüm akıllı tahtaları listeler"""
     return {
         "success": True,
-        "boards": manager.get_online_boards()
+        "boards": manager.get_online_boards(online_only=online_only)
+    }
+
+@app.post("/api/boards/cleanup")
+def cleanup_boards():
+    """Çevrimdışı kalan eski/hayalet tahta kayıtlarını temizler"""
+    count = manager.cleanup_offline()
+    return {
+        "success": True,
+        "message": f"{count} adet çevrimdışı tahta kaydı temizlendi."
     }
 
 @app.post("/api/unlock")
@@ -174,25 +228,27 @@ async def unlock_board(req: UnlockRequest):
             detail="Hatalı Öğretmen PIN Kodu!"
         )
 
-    # 2. Tahtanın çevrimiçi olup olmadığını kontrol et
-    if not manager.is_connected(req.board_id):
+    # 2. Tahtayı bul (cihaz ID'si veya sınıf adıyla)
+    target_id = manager.find_board(req.board_id)
+    if not target_id or not manager.is_connected(target_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{req.board_id} isimli tahta şu anda çevrimdışı! (İnterneti veya kilit programı kapalı olabilir)"
+            detail=f"'{req.board_id}' isimli tahta şu anda çevrimdışı! (İnterneti veya kilit programı kapalı olabilir)"
         )
 
     # 3. Tahtaya WebSocket üzerinden kilit açma emri gönder
-    sent = await manager.send_to_board(req.board_id, {
+    board_name = manager.board_names.get(target_id, target_id)
+    sent = await manager.send_to_board(target_id, {
         "action": "unlock",
         "by": "teacher",
         "timestamp": time.time()
     })
 
     if sent:
-        manager.board_status[req.board_id] = "unlocked"
+        manager.board_status[target_id] = "unlocked"
         return {
             "success": True,
-            "message": f"{req.board_id} tahtasının kilidi başarıyla açıldı! 🔓"
+            "message": f"{board_name} tahtasının kilidi başarıyla açıldı! 🔓"
         }
     else:
         raise HTTPException(
@@ -209,23 +265,25 @@ async def lock_board(req: LockRequest):
             detail="Hatalı Öğretmen PIN Kodu!"
         )
 
-    if not manager.is_connected(req.board_id):
+    target_id = manager.find_board(req.board_id)
+    if not target_id or not manager.is_connected(target_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"{req.board_id} tahtası çevrimdışı."
+            detail=f"'{req.board_id}' tahtası çevrimdışı."
         )
 
-    sent = await manager.send_to_board(req.board_id, {
+    board_name = manager.board_names.get(target_id, target_id)
+    sent = await manager.send_to_board(target_id, {
         "action": "lock",
         "by": "teacher",
         "timestamp": time.time()
     })
 
     if sent:
-        manager.board_status[req.board_id] = "locked"
+        manager.board_status[target_id] = "locked"
         return {
             "success": True,
-            "message": f"{req.board_id} tahtası kilitlendi! 🔒"
+            "message": f"{board_name} tahtası kilitlendi! 🔒"
         }
     else:
         raise HTTPException(
@@ -263,16 +321,18 @@ async def broadcast_announcement(req: BroadcastRequest):
             "message": f"Duyuru açık olan {count} tahtaya başarıyla iletildi! 📢"
         }
     else:
-        if not manager.is_connected(req.target):
+        target_id = manager.find_board(req.target)
+        if not target_id or not manager.is_connected(target_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"{req.target} tahtası şu anda çevrimdışı."
+                detail=f"'{req.target}' tahtası şu anda çevrimdışı."
             )
-        sent = await manager.send_to_board(req.target, payload)
+        sent = await manager.send_to_board(target_id, payload)
         if sent:
+            board_name = manager.board_names.get(target_id, target_id)
             return {
                 "success": True,
-                "message": f"Duyuru {req.target} tahtasına başarıyla iletildi!"
+                "message": f"Duyuru '{board_name}' tahtasına başarıyla iletildi!"
             }
         else:
             raise HTTPException(

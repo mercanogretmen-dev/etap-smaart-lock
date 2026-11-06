@@ -50,36 +50,58 @@ function switchTab(tabName) {
 }
 
 // -------------------------------------------------------------
-// 📡 Çevrimiçi Tahtaları Listeleme
+// 📡 Çevrimiçi Tahtaları Listeleme (Sadece Aktif Tahtalar)
 // -------------------------------------------------------------
 async function fetchOnlineBoards() {
   const select = document.getElementById("boardSelect");
   const adminTarget = document.getElementById("adminTarget");
 
   try {
-    const res = await fetch("/api/boards");
+    const res = await fetch("/api/boards?online_only=true");
     const data = await res.json();
 
     if (data.success && data.boards) {
       select.innerHTML = '<option value="">-- Çevrimiçi Tahta Seçin --</option>';
       adminTarget.innerHTML = '<option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>';
 
-      data.boards.forEach(b => {
-        const statusEmoji = b.status === "unlocked" ? "🔓" : "🔒";
-        const opt = document.createElement("option");
-        opt.value = b.id;
-        opt.textContent = `${statusEmoji} ${b.id} (${b.online ? "Çevrimiçi" : "Çevrimdışı"})`;
-        select.appendChild(opt);
+      // Sadece ve sadece çevrimiçi (online) tahtaları göster
+      const onlineBoards = data.boards.filter(b => b.online);
 
-        // Müdür paneli için seçenek ekle
-        const adminOpt = document.createElement("option");
-        adminOpt.value = b.id;
-        adminOpt.textContent = `🖥️ ${b.id}`;
-        adminTarget.appendChild(adminOpt);
-      });
+      if (onlineBoards.length === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "⚠️ Şu an açık tahta yok";
+        select.appendChild(opt);
+      } else {
+        onlineBoards.forEach(b => {
+          const statusEmoji = b.status === "unlocked" ? "🔓" : "🔒";
+          const displayName = b.name || b.id;
+          const opt = document.createElement("option");
+          opt.value = b.id;
+          opt.textContent = `${statusEmoji} ${displayName}`;
+          select.appendChild(opt);
+
+          // Müdür paneli için hedef
+          const adminOpt = document.createElement("option");
+          adminOpt.value = b.id;
+          adminOpt.textContent = `🖥️ ${displayName}`;
+          adminTarget.appendChild(adminOpt);
+        });
+      }
     }
   } catch (err) {
     console.warn("Sunucuya bağlanılamadı veya çevrimdışı:", err);
+  }
+}
+
+async function cleanupOfflineBoards() {
+  try {
+    const res = await fetch("/api/boards/cleanup", { method: "POST" });
+    const data = await res.json();
+    showToast(data.message || "Temizlendi", "success");
+    fetchOnlineBoards();
+  } catch (e) {
+    showToast("Temizleme sırasında hata oluştu", "error");
   }
 }
 
@@ -93,9 +115,11 @@ function onBoardSelectChange() {
 
 // Seçili Tahta ID'sini Al
 function getSelectedBoardId() {
-  const custom = document.getElementById("customBoardInput").value.trim();
+  const customInput = document.getElementById("customBoardInput");
+  const targetId = customInput.dataset.targetId;
+  const custom = customInput.value.trim();
   const select = document.getElementById("boardSelect").value;
-  return custom || select;
+  return targetId || custom || select;
 }
 
 // -------------------------------------------------------------
@@ -156,21 +180,27 @@ function onQrCodeSuccess(decodedText) {
 
   stopCameraScanner();
 
-  // QR İçeriği Formatı: "etap://unlock?board=9-A&token=xyz" veya sadece "9-A"
   try {
     if (decodedText.startsWith("etap://")) {
       const url = new URL(decodedText);
       const boardId = url.searchParams.get("board");
+      const boardName = url.searchParams.get("name") || boardId;
       if (boardId) {
-        document.getElementById("customBoardInput").value = boardId;
-        localStorage.setItem("etap_selected_board", boardId);
+        const input = document.getElementById("customBoardInput");
+        input.value = boardName;
+        input.dataset.targetId = boardId;
+        localStorage.setItem("etap_selected_board", boardName);
       }
     } else {
-      document.getElementById("customBoardInput").value = decodedText;
+      const input = document.getElementById("customBoardInput");
+      input.value = decodedText;
+      delete input.dataset.targetId;
       localStorage.setItem("etap_selected_board", decodedText);
     }
   } catch (e) {
-    document.getElementById("customBoardInput").value = decodedText;
+    const input = document.getElementById("customBoardInput");
+    input.value = decodedText;
+    delete input.dataset.targetId;
   }
 
   showToast("Tahta algılandı! Açılıyor...", "success");

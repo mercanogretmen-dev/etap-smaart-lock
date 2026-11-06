@@ -55,13 +55,41 @@ def load_config():
         "sinif_adi": "9-A",
         "sunucu_ws_url": "wss://etap-smaart-lock.onrender.com/ws/board/",
         "ogretmen_pin": "1234",
-        "yonetici_sifre": "admin123"
+        "yonetici_sifre": "admin123",
+        "cihaz_id": ""
     }
     for k, v in defaults.items():
         if k not in config["GENEL"]:
             config["GENEL"][k] = v
 
     return config
+
+def get_device_id(config):
+    """Her tahta için benzersiz ve kalıcı donanım/cihaz kimliğini döner."""
+    dev_id = config.get("GENEL", "cihaz_id", fallback="").strip()
+    if dev_id:
+        return dev_id
+
+    # 1. Linux Pardus machine-id kontrolü
+    for mid_file in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
+        if os.path.exists(mid_file):
+            try:
+                with open(mid_file, "r") as f:
+                    content = f.read().strip()
+                    if content:
+                        dev_id = f"etap-{content[:8]}"
+                        break
+            except Exception:
+                pass
+
+    # 2. Bulunamazsa benzersiz UUID üret
+    if not dev_id:
+        import uuid
+        dev_id = f"etap-{uuid.uuid4().hex[:8]}"
+
+    config.set("GENEL", "cihaz_id", dev_id)
+    save_config(config)
+    return dev_id
 
 def save_config(config):
     """Hem yerel klasöre (izin varsa) hem de garanti olsun diye ~/.config/ dizinine kaydeder."""
@@ -93,9 +121,14 @@ class WebSocketClientThread(QThread):
     signal_status = pyqtSignal(bool)           # True = Çevrimiçi, False = Çevrimdışı
     signal_command = pyqtSignal(dict)          # Sunucudan gelen kilit/duyuru komutları
 
-    def __init__(self, ws_url: str, board_id: str):
+    def __init__(self, ws_url: str, device_id: str, board_name: str):
         super().__init__()
-        self.ws_url = ws_url.rstrip("/") + "/" + board_id
+        import urllib.parse
+        encoded_name = urllib.parse.quote(board_name)
+        # /ws/board/{device_id}?name={board_name}
+        self.ws_url = f"{ws_url.rstrip('/')}/{device_id}?name={encoded_name}"
+        self.device_id = device_id
+        self.board_name = board_name
         self.running = True
 
     def run(self):
@@ -233,8 +266,9 @@ class LockScreenWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.cfg = load_config()
+        self.cihaz_id = get_device_id(self.cfg)
         self.sinif_adi = self.cfg.get("GENEL", "sinif_adi", fallback="9-A")
-        self.sunucu_url = self.cfg.get("GENEL", "sunucu_ws_url", fallback="ws://localhost:8000/ws/board/")
+        self.sunucu_url = self.cfg.get("GENEL", "sunucu_ws_url", fallback="wss://etap-smaart-lock.onrender.com/ws/board/")
         self.ogretmen_pin = self.cfg.get("GENEL", "ogretmen_pin", fallback="1234")
         self.yonetici_sifre = self.cfg.get("GENEL", "yonetici_sifre", fallback="admin123")
 
@@ -423,8 +457,10 @@ class LockScreenWindow(QMainWindow):
         self.lbl_date.setText(f"{now.day} {ay_str} {now.year}, {gun_str}")
 
     def generate_qr(self):
-        # QR Kod İçeriği: etap://unlock?board=9-A
-        qr_content = f"etap://unlock?board={self.sinif_adi}&t={int(time.time())}"
+        # QR Kod İçeriği: etap://unlock?board=cihaz_id&name=9-A&t=...
+        import urllib.parse
+        encoded_name = urllib.parse.quote(self.sinif_adi)
+        qr_content = f"etap://unlock?board={self.cihaz_id}&name={encoded_name}&t={int(time.time())}"
 
         qr = qrcode.QRCode(
             version=1,
@@ -514,7 +550,7 @@ class LockScreenWindow(QMainWindow):
     # 📡 Ağ ve WebSocket Olayları
     # -------------------------------------------------------------
     def init_network(self):
-        self.ws_thread = WebSocketClientThread(self.sunucu_url, self.sinif_adi)
+        self.ws_thread = WebSocketClientThread(self.sunucu_url, self.cihaz_id, self.sinif_adi)
         self.ws_thread.signal_status.connect(self.on_network_status_change)
         self.ws_thread.signal_command.connect(self.on_server_command)
         self.ws_thread.start()
