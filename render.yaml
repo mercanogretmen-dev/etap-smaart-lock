@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: etap-smartlock-server
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    plan: free
+    region: frankfurt
+    envVars:
+      - key: TEACHER_PIN
+        value: "1234"
+      - key: ADMIN_PIN
+        value: "9999"
+      - key: SECRET_SALT
+        value: "etap-super-secret-salt-2026"

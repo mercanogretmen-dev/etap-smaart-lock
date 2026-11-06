@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ETAP Akıllı Kilit & Mobil Yönetim</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- HTML5 QR Code Okuyucu Kütüphanesi -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Üst Başlık -->
+    <header class="app-header">
+      <div class="logo-area">
+        <span class="icon">🔒</span>
+        <h1>ETAP Kilit</h1>
+      </div>
+      <div id="connStatus" class="status-badge online">● Sunucu Hazır</div>
+    </header>
+
+    <!-- Navigasyon Sekmeleri -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" onclick="switchTab('teacher')">👨‍🏫 Öğretmen</button>
+      <button class="tab-btn" onclick="switchTab('offline')">🔢 Çevrimdışı PIN</button>
+      <button class="tab-btn" onclick="switchTab('admin')">📢 Müdür / İdare</button>
+    </nav>
+
+    <!-- SEKME 1: ÖĞRETMEN KİLİT KONTROLÜ -->
+    <main id="teacherTab" class="tab-content active">
+      <div class="card">
+        <h3>Tahta Kilit Kontrolü</h3>
+
+        <!-- Kamera QR Okuma Alanı -->
+        <div class="scanner-section">
+          <button id="startScanBtn" class="btn btn-secondary" onclick="toggleCameraScanner()">
+            📷 Tahtadaki QR Kodu Tara
+          </button>
+          <div id="qrReader" class="qr-reader hidden"></div>
+        </div>
+
+        <div class="divider"><span>veya manuel seçin</span></div>
+
+        <!-- Sınıf / Tahta Seçimi -->
+        <div class="input-group">
+          <label for="boardSelect">Sınıf / Tahta:</label>
+          <div class="select-row">
+            <select id="boardSelect" onchange="onBoardSelectChange()">
+              <option value="">-- Çevrimiçi Tahta Seçin --</option>
+            </select>
+            <button class="btn-refresh" title="Yenile" onclick="fetchOnlineBoards()">🔄</button>
+          </div>
+          <input type="text" id="customBoardInput" placeholder="Veya manuel yazın (Örn: 9-A)" class="mt-2">
+        </div>
+
+        <!-- Öğretmen PIN Kodu -->
+        <div class="input-group">
+          <label for="teacherPin">Ortak Öğretmen PIN Kodu:</label>
+          <input type="password" id="teacherPin" placeholder="Örn: 1234" maxlength="8" inputmode="numeric">
+          <small class="hint">PIN kodunuz tarayıcıda güvenle hatırlanır.</small>
+        </div>
+
+        <!-- Aksiyon Butonları -->
+        <div class="action-buttons">
+          <button id="unlockBtn" class="btn btn-primary" onclick="sendUnlock()">
+            🔓 Kilidi Aç
+          </button>
+          <button id="lockBtn" class="btn btn-danger" onclick="sendLock()">
+            🔒 Dersi Bitir & Kilitle
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- SEKME 2: ÇEVRİMDIŞI TOTP / ACİL DURUM PIN -->
+    <section id="offlineTab" class="tab-content">
+      <div class="card offline-card">
+        <h3>İnternetsiz Acil Kilit Açma</h3>
+        <p class="offline-desc">
+          Okulda internet koptuğunda veya telefonunuz çekmediğinde, tahta ekranındaki dokunmatik tuş takımına aşağıdaki kodu giriniz:
+        </p>
+
+        <div class="totp-box">
+          <div class="totp-label">GÜNCEL GEÇİCİ PIN</div>
+          <div id="totpCode" class="totp-code">----</div>
+          <div class="totp-timer">
+            <div id="totpBar" class="timer-bar"></div>
+          </div>
+          <small id="totpSec">30 saniye sonra değişecek</small>
+        </div>
+
+        <div class="info-note">
+          💡 Bu kod tahtada ve telefonda ortak matematiksel saat algoritmasıyla üretilir. Ne internet ne de Wi-Fi gerektirir.
+        </div>
+      </div>
+    </section>
+
+    <!-- SEKME 3: MÜDÜR / İDARE ANONS PANELİ -->
+    <section id="adminTab" class="tab-content">
+      <div class="card admin-card">
+        <h3>Müdür / İdare Duyuru Paneli</h3>
+        <p class="hint">Tahtaların en üstünde mavi ışıklı kayan bant duyurusu yayınlar.</p>
+
+        <div class="input-group">
+          <label for="adminPin">İdare Giriş Kodu:</label>
+          <input type="password" id="adminPin" placeholder="Örn: 9999" maxlength="8" inputmode="numeric">
+        </div>
+
+        <div class="input-group">
+          <label for="adminTarget">Yayınlanacak Hedef:</label>
+          <select id="adminTarget">
+            <option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label for="adminMessage">Duyuru Metni:</label>
+          <textarea id="adminMessage" rows="3" placeholder="Örn: Sayın öğretmenlerimiz, 3. ders bitiminde öğretmenler odasında kısa bir toplantı yapılacaktır."></textarea>
+        </div>
+
+        <div class="input-group">
+          <label for="adminDuration">Ekranda Kalma Süresi (Saniye):</label>
+          <input type="number" id="adminDuration" value="60" min="10" max="3600">
+        </div>
+
+        <button class="btn btn-blue" onclick="sendBroadcast()">
+          📢 Mavi Işıklı Duyuruyu Yayınla
+        </button>
+      </div>
+    </section>
+
+    <!-- Bildirim Toast Kutusu -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

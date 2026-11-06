@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  smartlock-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: etap-smartlock-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - TEACHER_PIN=1234
+      - ADMIN_PIN=9999
+      - SECRET_SALT=etap-super-secret-salt-2026
+      - QR_VALIDITY_SECONDS=45
+    volumes:
+      - ./server:/app
