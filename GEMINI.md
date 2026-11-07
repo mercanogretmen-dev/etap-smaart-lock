@@ -10,9 +10,9 @@ Pardus ETAP yüklü akıllı tahtalar için geliştirilen hibrit kilit ve anons 
 4. **Sınıf Tanımlama:** Tahtadaki ayarlar butonundan yetkili şifresiyle sınıf adı (Örn: `9-A`) kolayca değiştirilebilir.
 
 ## 📂 Dosya Yapısı
-* `server/`: FastAPI + WebSockets sunucusu, Dockerfile ve `static/` altında mobil telefon arayüzü (PWA/QR okuyucu).
+* `server/`: FastAPI + WebSockets sunucusu, Dockerfile ve `static/` altında mobil telefon arayüzü (PWA/QR okuyucu, manifest.json, sw.js, mobil ikonlar).
 * `client-tahta/`: PyQt6 tam ekran kiosk kilit ekranı (`kilit_ekrani.py`), ayarlar (`config.ini`) ve Pardus kurulum betiği (`kur_pardus.sh`).
 * `docker-compose.yml`: Yerel Docker testi için.
 * `render.yaml`: Render.com ücretsiz bulut dağıtımı için.
-* `KULLANIM_KILAVUZU.md`: Adım adım test ve kullanım kılavuzu.
+* `KULLANIM_KILAVUZU.md`: Adım adım test, kullanım ve iOS/Android PWA mobil kurulum kılavuzu.
 * `MEB_VE_RENDER_NOTLARI.md`: Render 15 dk uyku/kota optimizasyonu (cron-job.org) ve MEB Fatih ağı SSL/filtre rehberi.

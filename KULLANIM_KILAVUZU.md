@@ -58,3 +58,22 @@ Telefonunuz 4.5G ile her yerden tahtayı açabilsin diye sunucuyu Render.com'a �
   * Telefonundan **"📢 Müdür / İdare"** sekmesine geçer.
   * İdare kodunu (`9999`) ve duyuru metnini yazıp gönderir.
   * Açık olan tüm tahtaların en üstünde mavi ışıklı kayan bant duyurusu akar.
+
+---
+
+## 📲 5. Telefona Mobil Uygulama (PWA) Olarak Kurma & Test Rehberi
+
+Uygulama tam ekran, tarayıcı çubuğu olmadan ve çevrimdışı çalışabilen **Progressive Web App (PWA)** standartlarındadır.
+
+### 🍏 iPhone (iOS) İçin Kurulum:
+1. iPhone'da **Safari** tarayıcısını açıp adrese girin: `https://etap-smaart-lock.onrender.com/`
+2. Ekranın en altındaki ortada yer alan **Paylaş** simgesine (kare içinden yukarı ok çıkan simge) dokunun.
+3. Menüyü biraz aşağı kaydırıp **"Ana Ekrana Ekle"** (+ simgesi) seçeneğine tıklayın.
+4. Sağ üstten **"Ekle"** deyin.
+5. **Sonuç:** iPhone masaüstünüze gelen **ETAP Kilit** simgesine dokunun. Artık Safari'nin hiçbir çubuğu olmadan, tam ekran bir iPhone uygulaması olarak açılacaktır!
+
+### 🤖 Android İçin Kurulum:
+1. **Chrome** ile adrese girin: `https://etap-smaart-lock.onrender.com/`
+2. Ekranın üstünde beliren **"📲 Yükle"** butonuna basın (veya sağ üstteki 3 noktaya basıp **"Uygulamayı Yükle"** deyin).
+3. Telefonunuzun ana ekranına uygulama olarak yüklenecektir.
+
