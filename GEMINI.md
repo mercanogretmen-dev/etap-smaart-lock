@@ -15,3 +15,4 @@ Pardus ETAP yüklü akıllı tahtalar için geliştirilen hibrit kilit ve anons 
 * `docker-compose.yml`: Yerel Docker testi için.
 * `render.yaml`: Render.com ücretsiz bulut dağıtımı için.
 * `KULLANIM_KILAVUZU.md`: Adım adım test ve kullanım kılavuzu.
+* `MEB_VE_RENDER_NOTLARI.md`: Render 15 dk uyku/kota optimizasyonu (cron-job.org) ve MEB Fatih ağı SSL/filtre rehberi.
