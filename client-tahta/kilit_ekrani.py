@@ -568,45 +568,333 @@ class BlueBannerTicker(QFrame):
 
 
 # -------------------------------------------------------------
-# ⚙️ Yetkili Ayarlar İletişim Kutusu
+# ⚙️ Kilit Ekranı İçine Gömülü Ayarlar Katmanı (In-Window Overlay)
+# Bu katman kilit ekranının İÇİNDE çizildiği için asla arkada açılmaz!
 # -------------------------------------------------------------
-class SettingsDialog(QDialog):
-    def __init__(self, current_board: str, current_url: str, parent=None):
+class SettingsOverlayWidget(QWidget):
+    def __init__(self, parent):
         super().__init__(parent)
-        self.setWindowTitle("Sistem Ayarları")
-        self.setFixedSize(420, 320)
-        self.setStyleSheet("background-color: #1e293b; color: #f8fafc;")
+        self.lock_window = parent
+        self.init_ui()
+        self.hide()
 
+    def init_ui(self):
+        self.setStyleSheet("background: rgba(0, 0, 0, 0.85);")
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(20, 20, 20, 20)
 
-        lbl = QLabel("Akıllı Tahta Sistem Ayarları")
-        lbl.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-        lbl.setStyleSheet("color: #38bdf8;")
-        layout.addWidget(lbl)
+        card = QFrame()
+        card.setFixedSize(620, 480)
+        card.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0f172a, stop:1 #1e293b);
+                border: 2px solid #38bdf8;
+                border-radius: 24px;
+            }
+        """)
+        glow = QGraphicsDropShadowEffect(card)
+        glow.setBlurRadius(50)
+        glow.setColor(QColor(56, 189, 248, 190))
+        glow.setOffset(0, 4)
+        card.setGraphicsEffect(glow)
 
-        layout.addWidget(QLabel("Sınıf / Tahta Adı:"))
-        self.input_board = QLineEdit(current_board)
-        self.input_board.setStyleSheet("padding: 8px; border-radius: 6px; background: #0f172a; color: white;")
-        layout.addWidget(self.input_board)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(35, 26, 35, 25)
+        card_layout.setSpacing(14)
 
-        layout.addWidget(QLabel("Merkezi Sunucu WebSocket Adresi:"))
-        self.input_url = QLineEdit(current_url)
-        self.input_url.setStyleSheet("padding: 8px; border-radius: 6px; background: #0f172a; color: white;")
-        layout.addWidget(self.input_url)
+        # Başlık ve Kapat Butonu
+        header = QHBoxLayout()
+        icon = QLabel("⚙️")
+        icon.setFont(QFont("Segoe UI Emoji", 24))
+        header.addWidget(icon)
 
+        title = QLabel("SİSTEM VE SINIF AYARLARI")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.ExtraBold))
+        title.setStyleSheet("color: #38bdf8; letter-spacing: 1px;")
+        header.addWidget(title)
+        header.addStretch()
+
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(36, 36)
+        btn_close.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #94a3b8;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 18px;
+            }
+            QPushButton:hover { background: #ef4444; color: white; border-color: #ef4444; }
+        """)
+        btn_close.clicked.connect(self.hide)
+        header.addWidget(btn_close)
+        card_layout.addLayout(header)
+
+        # 1. Sınıf / Tahta Adı
+        lbl_b = QLabel("🖥️ Sınıf / Tahta Adı:")
+        lbl_b.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        lbl_b.setStyleSheet("color: #e2e8f0;")
+        card_layout.addWidget(lbl_b)
+
+        self.input_board = QLineEdit()
+        self.input_board.setFont(QFont("Segoe UI", 13))
+        self.input_board.setFixedHeight(42)
+        self.input_board.setStyleSheet("""
+            QLineEdit {
+                background: #0b1120;
+                color: #ffffff;
+                border: 1.5px solid #334155;
+                border-radius: 10px;
+                padding: 0 14px;
+            }
+            QLineEdit:focus { border-color: #38bdf8; }
+        """)
+        card_layout.addWidget(self.input_board)
+
+        # 2. Sunucu WebSocket URL
+        lbl_u = QLabel("🌐 Sunucu WebSocket Adresi:")
+        lbl_u.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        lbl_u.setStyleSheet("color: #e2e8f0;")
+        card_layout.addWidget(lbl_u)
+
+        self.input_url = QLineEdit()
+        self.input_url.setFont(QFont("Segoe UI", 11))
+        self.input_url.setFixedHeight(42)
+        self.input_url.setStyleSheet("""
+            QLineEdit {
+                background: #0b1120;
+                color: #94a3b8;
+                border: 1.5px solid #334155;
+                border-radius: 10px;
+                padding: 0 14px;
+            }
+            QLineEdit:focus { border-color: #38bdf8; color: #fff; }
+        """)
+        card_layout.addWidget(self.input_url)
+
+        # Bilgi Notu
+        self.lbl_status = QLabel("💡 Not: İsim değiştiğinde sunucu bağlantısı kopmaz, anında güncellenir.")
+        self.lbl_status.setFont(QFont("Segoe UI", 10))
+        self.lbl_status.setStyleSheet("color: #64748b;")
+        card_layout.addWidget(self.lbl_status)
+
+        card_layout.addStretch()
+
+        # Butonlar
         btn_box = QHBoxLayout()
-        btn_save = QPushButton("💾 Kaydet ve Uygula")
-        btn_save.setStyleSheet("background: #10b981; color: white; padding: 10px; font-weight: bold; border-radius: 6px;")
-        btn_save.clicked.connect(self.accept)
+        btn_box.setSpacing(12)
+
+        btn_save = QPushButton("💾 Değişiklikleri Kaydet")
+        btn_save.setFixedHeight(45)
+        btn_save.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_save.setStyleSheet("""
+            QPushButton {
+                background: #10b981;
+                color: #ffffff;
+                border-radius: 12px;
+                border: none;
+            }
+            QPushButton:hover { background: #059669; }
+            QPushButton:pressed { background: #047857; }
+        """)
+        btn_save.clicked.connect(self.save_settings)
+        btn_box.addWidget(btn_save, 2)
 
         btn_cancel = QPushButton("İptal")
-        btn_cancel.setStyleSheet("background: #475569; color: white; padding: 10px; border-radius: 6px;")
-        btn_cancel.clicked.connect(self.reject)
+        btn_cancel.setFixedHeight(45)
+        btn_cancel.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #cbd5e1;
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            QPushButton:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+        """)
+        btn_cancel.clicked.connect(self.hide)
+        btn_box.addWidget(btn_cancel, 1)
 
-        btn_box.addWidget(btn_save)
-        btn_box.addWidget(btn_cancel)
-        layout.addLayout(btn_box)
+        card_layout.addLayout(btn_box)
+        layout.addWidget(card)
+
+    def show_settings(self):
+        self.input_board.setText(self.lock_window.sinif_adi)
+        self.input_url.setText(self.lock_window.sunucu_url)
+        self.lbl_status.setText("💡 Not: İsim değiştiğinde sunucu bağlantısı kopmaz, anında güncellenir.")
+        self.lbl_status.setStyleSheet("color: #64748b;")
+        self.setGeometry(0, 0, self.lock_window.width(), self.lock_window.height())
+        self.show()
+        self.raise_()
+        self.input_board.setFocus()
+
+    def save_settings(self):
+        new_name = self.input_board.text().strip() or "9-A"
+        new_url = self.input_url.text().strip()
+        self.lock_window.apply_new_settings(new_name, new_url)
+        self.lbl_status.setText("✅ Ayarlar kaydedildi ve uygulandı!")
+        self.lbl_status.setStyleSheet("color: #34d399; font-weight: bold;")
+        QTimer.singleShot(700, self.hide)
+
+
+# -------------------------------------------------------------
+# 🛡️ Kilit Ekranı İçine Gömülü Yönetici Çıkış Katmanı (Ctrl+Shift+Q)
+# Bu katman kilit ekranının İÇİNDE açılır, asla arkaya kaçmaz!
+# -------------------------------------------------------------
+class AdminExitOverlayWidget(QWidget):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.lock_window = parent
+        self.init_ui()
+        self.hide()
+
+    def init_ui(self):
+        self.setStyleSheet("background: rgba(0, 0, 0, 0.88);")
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        card = QFrame()
+        card.setFixedSize(500, 360)
+        card.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1e1b2e, stop:1 #0f172a);
+                border: 2px solid #ef4444;
+                border-radius: 24px;
+            }
+        """)
+        glow = QGraphicsDropShadowEffect(card)
+        glow.setBlurRadius(50)
+        glow.setColor(QColor(239, 68, 68, 180))
+        glow.setOffset(0, 4)
+        card.setGraphicsEffect(glow)
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(35, 30, 35, 30)
+        card_layout.setSpacing(16)
+
+        # Başlık
+        header = QHBoxLayout()
+        icon = QLabel("🛡️")
+        icon.setFont(QFont("Segoe UI Emoji", 26))
+        header.addWidget(icon)
+
+        title = QLabel("YÖNETİCİ ÇIKIŞI")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.ExtraBold))
+        title.setStyleSheet("color: #f87171; letter-spacing: 1.5px;")
+        header.addWidget(title)
+        header.addStretch()
+
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(36, 36)
+        btn_close.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #94a3b8;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 18px;
+            }
+            QPushButton:hover { background: #ef4444; color: white; }
+        """)
+        btn_close.clicked.connect(self.hide_overlay)
+        header.addWidget(btn_close)
+        card_layout.addLayout(header)
+
+        desc = QLabel("Kilit uygulamasını tamamen kapatmak için yönetici şifresini girin:")
+        desc.setFont(QFont("Segoe UI", 11))
+        desc.setStyleSheet("color: #94a3b8;")
+        desc.setWordWrap(True)
+        card_layout.addWidget(desc)
+
+        self.input_pwd = QLineEdit()
+        self.input_pwd.setEchoMode(QLineEdit.EchoMode.Password)
+        self.input_pwd.setFont(QFont("Segoe UI", 16))
+        self.input_pwd.setFixedHeight(48)
+        self.input_pwd.setPlaceholderText("Yönetici şifresi...")
+        self.input_pwd.setStyleSheet("""
+            QLineEdit {
+                background: #0b1120;
+                color: #ffffff;
+                border: 2px solid #334155;
+                border-radius: 12px;
+                padding: 0 16px;
+                letter-spacing: 4px;
+            }
+            QLineEdit:focus { border-color: #ef4444; }
+        """)
+        self.input_pwd.returnPressed.connect(self.verify_exit)
+        card_layout.addWidget(self.input_pwd)
+
+        self.lbl_error = QLabel("")
+        self.lbl_error.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self.lbl_error.setStyleSheet("color: #ef4444;")
+        self.lbl_error.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(self.lbl_error)
+
+        card_layout.addStretch()
+
+        # Butonlar
+        btn_box = QHBoxLayout()
+        btn_box.setSpacing(12)
+
+        btn_exit = QPushButton("🛑 Kilit Ekranını Kapat")
+        btn_exit.setFixedHeight(45)
+        btn_exit.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_exit.setStyleSheet("""
+            QPushButton {
+                background: #ef4444;
+                color: white;
+                border-radius: 12px;
+                border: none;
+            }
+            QPushButton:hover { background: #dc2626; }
+            QPushButton:pressed { background: #b91c1c; }
+        """)
+        btn_exit.clicked.connect(self.verify_exit)
+        btn_box.addWidget(btn_exit, 2)
+
+        btn_cancel = QPushButton("İptal")
+        btn_cancel.setFixedHeight(45)
+        btn_cancel.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #cbd5e1;
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            QPushButton:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+        """)
+        btn_cancel.clicked.connect(self.hide_overlay)
+        btn_box.addWidget(btn_cancel, 1)
+
+        card_layout.addLayout(btn_box)
+        layout.addWidget(card)
+
+    def show_prompt(self):
+        self.input_pwd.clear()
+        self.lbl_error.clear()
+        self.setGeometry(0, 0, self.lock_window.width(), self.lock_window.height())
+        self.show()
+        self.raise_()
+        self.input_pwd.setFocus()
+
+    def hide_overlay(self):
+        self.hide()
+        if self.lock_window.is_locked:
+            self.lock_window.show_kiosk_fullscreen()
+
+    def verify_exit(self):
+        pwd = self.input_pwd.text().strip()
+        if pwd == self.lock_window.yonetici_sifre:
+            self.lock_window.is_locked = False
+            QApplication.quit()
+        else:
+            self.lbl_error.setText("❌ Hatalı yönetici şifresi!")
+            self.input_pwd.selectAll()
+            self.input_pwd.setFocus()
 
 
 # -------------------------------------------------------------
@@ -625,6 +913,8 @@ class LockScreenWindow(QMainWindow):
         self.entered_pin = ""
         self.is_locked = True
         self.announcement_overlay = None
+        self.settings_overlay = None
+        self.admin_exit_overlay = None
 
         self.init_ui()
         self.init_network()
@@ -804,9 +1094,15 @@ class LockScreenWindow(QMainWindow):
         self.timer_qr.start(30000)  # Her 30 saniyede bir yeni QR kod
         self.generate_qr()
 
-        # 4. Kilit Ekranına Gömülü Duyuru Katmanı (Görev çubuğunun çıkmasını kesin engeller)
+        # 4. Kilit Ekranına Gömülü Katmanlar (Asla arkada açılmaz ve görev çubuğunu tetiklemez!)
         self.announcement_overlay = AnnouncementOverlayWidget(self)
         self.announcement_overlay.hide()
+
+        self.settings_overlay = SettingsOverlayWidget(self)
+        self.settings_overlay.hide()
+
+        self.admin_exit_overlay = AdminExitOverlayWidget(self)
+        self.admin_exit_overlay.hide()
 
     # -------------------------------------------------------------
     # 🛡️ Kiosk Modu & Öğrenci Güvenlik Koruması
@@ -836,8 +1132,9 @@ class LockScreenWindow(QMainWindow):
             self.grabKeyboard()
         except Exception:
             pass
-        if hasattr(self, "announcement_overlay") and self.announcement_overlay:
-            self.announcement_overlay.setGeometry(0, 0, self.width(), self.height())
+        for overlay in [self.announcement_overlay, self.settings_overlay, self.admin_exit_overlay]:
+            if overlay:
+                overlay.setGeometry(0, 0, self.width(), self.height())
 
     def restore_kiosk_fullscreen(self):
         if not self.is_locked:
@@ -852,8 +1149,13 @@ class LockScreenWindow(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, "announcement_overlay") and self.announcement_overlay:
-            self.announcement_overlay.setGeometry(0, 0, self.width(), self.height())
+        for overlay in [
+            getattr(self, "announcement_overlay", None),
+            getattr(self, "settings_overlay", None),
+            getattr(self, "admin_exit_overlay", None)
+        ]:
+            if overlay:
+                overlay.setGeometry(0, 0, self.width(), self.height())
 
     # -------------------------------------------------------------
     # 🕒 Saat & Dinamik QR Kod
@@ -1042,64 +1344,43 @@ class LockScreenWindow(QMainWindow):
             os.system("systemctl poweroff || shutdown -h now || poweroff")
 
     # -------------------------------------------------------------
-    # ⚙️ Ayarlar
+    # ⚙️ Ayarlar (In-Window Katman)
     # -------------------------------------------------------------
     def open_settings(self):
-        # Önce yönetici şifresini doğrula
-        pwd, ok = QLineEdit(), False
-        # Basit onay
+        # Basit onay: Numpadde yönetici veya öğretmen şifresi yazılmışsa doğrudan katmanı aç
         if self.entered_pin == self.yonetici_sifre or self.entered_pin == self.ogretmen_pin:
             self.clear_pin()
-            try:
-                self.releaseKeyboard()
-            except Exception:
-                pass
-            dlg = SettingsDialog(self.sinif_adi, self.sunucu_url, self)
-            if dlg.exec() == QDialog.DialogCode.Accepted:
-                new_board = dlg.input_board.text().strip() or "9-A"
-                new_url = dlg.input_url.text().strip()
-                old_name = self.sinif_adi
-                old_url = self.sunucu_url
-
-                self.sinif_adi = new_board
-                self.sunucu_url = new_url
-                self.cfg.set("GENEL", "sinif_adi", self.sinif_adi)
-                self.cfg.set("GENEL", "sunucu_ws_url", self.sunucu_url)
-                
-                # Dosyaya kalıcı kaydet
-                saved = save_config(self.cfg)
-                if not saved:
-                    print("⚠️ Uyarı: Config dosyasına yazılamadı.")
-                
-                # Ekranda tahta adını anında güncelle
-                self.lbl_class.setText(f"🖥️ {self.sinif_adi}")
-                self.generate_qr()
-                
-                # Sunucu adresi değiştiyse baştan başlat
-                if new_url != old_url:
-                    if hasattr(self, "ws_thread") and self.ws_thread:
-                        self.ws_thread.stop()
-                    self.init_network()
-                else:
-                    # Sadece sınıf adı değiştiyse bağlantıyı ASLA koparma! Anlık canlı güncelleme gönder
-                    updated = False
-                    if hasattr(self, "ws_thread") and self.ws_thread:
-                        updated = self.ws_thread.send_name_update(self.sinif_adi)
-                    if not updated:
-                        if hasattr(self, "ws_thread") and self.ws_thread:
-                            self.ws_thread.stop()
-                        self.init_network()
-
-                QMessageBox.information(
-                    self,
-                    "Ayarlar Kaydedildi",
-                    f"✅ Tahta adı '{self.sinif_adi}' olarak güncellendi ve sunucuya anında bildirildi!"
-                )
-            if self.is_locked:
-                self.show_kiosk_fullscreen()
+            if hasattr(self, "settings_overlay") and self.settings_overlay:
+                self.settings_overlay.show_settings()
         else:
             self.pin_display.setText("ŞİFRE GİRİN")
             QTimer.singleShot(1500, self.clear_pin)
+
+    def apply_new_settings(self, new_board: str, new_url: str):
+        old_name = self.sinif_adi
+        old_url = self.sunucu_url
+
+        self.sinif_adi = new_board
+        self.sunucu_url = new_url
+        self.cfg.set("GENEL", "sinif_adi", self.sinif_adi)
+        self.cfg.set("GENEL", "sunucu_ws_url", self.sunucu_url)
+        save_config(self.cfg)
+
+        self.lbl_class.setText(f"🖥️ {self.sinif_adi}")
+        self.generate_qr()
+
+        if new_url != old_url:
+            if hasattr(self, "ws_thread") and self.ws_thread:
+                self.ws_thread.stop()
+            self.init_network()
+        else:
+            updated = False
+            if hasattr(self, "ws_thread") and self.ws_thread:
+                updated = self.ws_thread.send_name_update(self.sinif_adi)
+            if not updated:
+                if hasattr(self, "ws_thread") and self.ws_thread:
+                    self.ws_thread.stop()
+                self.init_network()
 
     # -------------------------------------------------------------
     # 🛑 Sistem Tuşlarını Engelleme (Kiosk Güvenliği)
@@ -1109,11 +1390,27 @@ class LockScreenWindow(QMainWindow):
             super().keyPressEvent(event)
             return
 
-        # 1. Yetkili / Yönetici Acil Çıkış Kısayolu: Ctrl + Shift + Q
-        # ÖĞRENCİ ENGELİ: Şifresiz doğrudan kapanamaz!
+        # Açık bir katman (Ayarlar veya Çıkış) varsa, tuşları o katmana gönder
+        active_overlay = None
+        if hasattr(self, "settings_overlay") and self.settings_overlay and self.settings_overlay.isVisible():
+            active_overlay = self.settings_overlay
+        elif hasattr(self, "admin_exit_overlay") and self.admin_exit_overlay and self.admin_exit_overlay.isVisible():
+            active_overlay = self.admin_exit_overlay
+
+        if active_overlay:
+            # ESC tuşuna basılırsa açık katmanı kapat
+            if event.key() == Qt.Key.Key_Escape:
+                active_overlay.hide()
+                self.show_kiosk_fullscreen()
+                return
+            super().keyPressEvent(event)
+            return
+
+        # 1. Yetkili / Yönetici Acil Çıkış Kısayolu: Ctrl + Shift + Q (Dahili şifre ekranını açar)
         if (event.modifiers() == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier) 
             and event.key() == Qt.Key.Key_Q):
-            self.prompt_admin_exit()
+            if hasattr(self, "admin_exit_overlay") and self.admin_exit_overlay:
+                self.admin_exit_overlay.show_prompt()
             return
 
         # 2. Fiziksel klavyeden rakam tuşları (0-9 ve Numpad 0-9)
@@ -1139,29 +1436,8 @@ class LockScreenWindow(QMainWindow):
             self.clear_pin()
             return
 
-        # 5. TÜM DİĞER SİSTEM KISAYOLLARINI BLOKE ET:
-        # Windows (Super) tuşu, Windows+D, Alt+Tab, Alt+F4, Ctrl+Alt+T, Esc, F11 vb.
+        # 5. TÜM DİĞER SİSTEM KISAYOLLARINI BLOKE ET (Windows, Alt+Tab, Alt+F4, Esc, F11 vb.)
         event.ignore()
-
-    def prompt_admin_exit(self):
-        """Yalnızca yönetici şifresini (yonetici_sifre) bilen yetkilinin programı sonlandırmasına izin verir."""
-        try:
-            self.releaseKeyboard()
-        except Exception:
-            pass
-        pwd, ok = QInputDialog.getText(
-            self,
-            "Yönetici Çıkışı",
-            "Kilit ekranını tamamen kapatmak için YÖNETİCİ şifresini girin:",
-            QLineEdit.EchoMode.Password
-        )
-        if ok and pwd == self.yonetici_sifre:
-            self.is_locked = False
-            QApplication.quit()
-        else:
-            if ok:
-                QMessageBox.warning(self, "Yetkisiz Erişim", "Hatalı yönetici şifresi! Kilit ekranı kapatılamaz.")
-            self.show_kiosk_fullscreen()
 
     def closeEvent(self, event):
         # Kullanıcının pencereyi kapatmasını engelle
