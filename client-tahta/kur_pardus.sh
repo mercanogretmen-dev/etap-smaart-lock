@@ -48,10 +48,11 @@ echo "⚙️ Otomatik başlatma yapılandırılıyor: ${AUTOSTART_FILE}"
 cat << 'EOF' > "$AUTOSTART_FILE"
 [Desktop Entry]
 Type=Application
-Name=ETAP Akıllı Kilit
-Comment=Pardus ETAP Akıllı Tahta Kilit Sistemi
+Name=Tahta Kilit
+Comment=Etkileşimli Tahta Kilit Uygulaması (Mercan Robotik)
 Exec=/usr/bin/python3 /opt/etap-smartlock/kilit_ekrani.py
 Path=/opt/etap-smartlock
+Icon=/opt/etap-smartlock/assets/tahta_kilit_icon.png
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -64,11 +65,11 @@ DESKTOP_ENTRY="/usr/share/applications/etap-smartlock.desktop"
 cat << 'EOF' > "$DESKTOP_ENTRY"
 [Desktop Entry]
 Type=Application
-Name=ETAP Akıllı Kilit
-Comment=Akıllı Tahta Kilit Sistemi
+Name=Tahta Kilit
+Comment=Etkileşimli Tahta Kilit Uygulaması (Mercan Robotik)
 Exec=/usr/bin/python3 /opt/etap-smartlock/kilit_ekrani.py
 Path=/opt/etap-smartlock
-Icon=system-lock-screen
+Icon=/opt/etap-smartlock/assets/tahta_kilit_icon.png
 Terminal=false
 Categories=Utility;System;
 EOF

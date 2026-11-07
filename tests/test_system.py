@@ -40,7 +40,7 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         """Mobil web arayüzünün (HTML, CSS, JS) başarıyla sunulduğunu doğrular."""
         res_index = self.client.get("/")
         self.assertEqual(res_index.status_code, 200)
-        self.assertIn("ETAP", res_index.text)
+        self.assertIn("Tahta Kilit", res_index.text)
         self.assertIn("html5-qrcode", res_index.text)
 
         res_css = self.client.get("/style.css")
@@ -53,7 +53,7 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         # PWA Manifest & Service Worker & İkon testleri
         res_manifest = self.client.get("/manifest.json")
         self.assertEqual(res_manifest.status_code, 200)
-        self.assertIn("ETAP Akıllı Kilit", res_manifest.text)
+        self.assertIn("Tahta Kilit", res_manifest.text)
 
         res_sw = self.client.get("/sw.js")
         self.assertEqual(res_sw.status_code, 200)

@@ -1,7 +1,7 @@
 {
-  "name": "ETAP Akıllı Kilit & Mobil Yönetim",
-  "short_name": "ETAP Kilit",
-  "description": "Pardus ETAP Akıllı Tahta Kilit Açma ve Mobil Yönetim Sistemi",
+  "name": "Tahta Kilit — Etkileşimli Tahta Kilit Uygulaması (Mercan Robotik)",
+  "short_name": "Tahta Kilit",
+  "description": "Mercan Robotik — Etkileşimli Tahta Kilit Açma ve Mobil Yönetim Sistemi",
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",

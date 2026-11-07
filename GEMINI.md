@@ -16,3 +16,8 @@ Pardus ETAP yüklü akıllı tahtalar için geliştirilen hibrit kilit ve anons 
 * `render.yaml`: Render.com ücretsiz bulut dağıtımı için.
 * `KULLANIM_KILAVUZU.md`: Adım adım test, kullanım ve iOS/Android PWA mobil kurulum kılavuzu.
 * `MEB_VE_RENDER_NOTLARI.md`: Render 15 dk uyku/kota optimizasyonu (cron-job.org) ve MEB Fatih ağı SSL/filtre rehberi.
+
+## 🏷️ Versiyon Takibi & Kararlı Sürümler (Git)
+* **`v1.0.0-stable` (Etiket / Tag) & `stable-v1.0` (Dal / Branch):** Commit `ab744e0` — Kiosk güvenliği (`BypassWindowManagerHint`), dahili katmanlar (Ayarlar, Yönetici Çıkışı, Duyuru), fiziksel + dokunmatik klavye desteği, masaüstü açıkken müdür duyuru penceresi ve iOS/Android PWA mobil arayüzünün tam çalışır, test edilmiş ilk kararlı sürümü.
+* **Yerel Yedek Arşivi:** `backups/etap-smart-lock-v1.0.0-stable.zip`
+* **Kararlı Sürüme Geri Dönme Komutu:** `git checkout v1.0.0-stable` veya `git reset --hard v1.0.0-stable`
