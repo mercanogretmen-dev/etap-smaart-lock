@@ -17,9 +17,10 @@ echo "🛑 Eski kilit ekranı durduruluyor..."
 sudo pkill -f kilit_ekrani.py || true
 sleep 1
 
-# 2. GitHub'dan en son kodları çek
+# 2. GitHub'dan en son kodları çek (Yerel config.ini çakışmalarını otomatik temizle; asıl ayarlar /etc ve ~/.config altındadır)
 echo "📥 GitHub'dan güncellemeler çekiliyor..."
-git pull
+git fetch origin main
+git reset --hard origin/main
 
 # 3. Kurulum betiğini çalıştır ve sistemi güncelle
 echo "⚙️ Yeni dosyalar sisteme uygulanıyor..."
