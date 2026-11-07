@@ -1144,7 +1144,7 @@ class LockScreenWindow(QMainWindow):
         event.ignore()
 
     def prompt_admin_exit(self):
-        """Yalnızca yönetici şifresini bilen yetkilinin programı sonlandırmasına izin verir."""
+        """Yalnızca yönetici şifresini (yonetici_sifre) bilen yetkilinin programı sonlandırmasına izin verir."""
         try:
             self.releaseKeyboard()
         except Exception:
@@ -1152,15 +1152,15 @@ class LockScreenWindow(QMainWindow):
         pwd, ok = QInputDialog.getText(
             self,
             "Yönetici Çıkışı",
-            "Kilit ekranını kapatmak için yetkili şifresini girin:",
+            "Kilit ekranını tamamen kapatmak için YÖNETİCİ şifresini girin:",
             QLineEdit.EchoMode.Password
         )
-        if ok and (pwd == self.yonetici_sifre or pwd == self.ogretmen_pin):
+        if ok and pwd == self.yonetici_sifre:
             self.is_locked = False
             QApplication.quit()
         else:
             if ok:
-                QMessageBox.warning(self, "Yetkisiz Erişim", "Hatalı şifre girildi!")
+                QMessageBox.warning(self, "Yetkisiz Erişim", "Hatalı yönetici şifresi! Kilit ekranı kapatılamaz.")
             self.show_kiosk_fullscreen()
 
     def closeEvent(self, event):
