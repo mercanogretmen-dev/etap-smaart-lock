@@ -5,6 +5,7 @@ import sys
 import time
 from typing import Dict, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -388,8 +389,20 @@ async def broadcast_announcement(req: BroadcastRequest):
             )
 
 # -------------------------------------------------------------
-# 📂 Statik Dosyalar (Telefon Arayüzü / Mobil Web App)
+# 📂 Statik Dosyalar & PWA (Manifest & Service Worker)
 # -------------------------------------------------------------
 STATIC_DIR = os.path.join(CURRENT_DIR, "static")
+
+@app.get("/manifest.json")
+async def get_manifest():
+    return FileResponse(os.path.join(STATIC_DIR, "manifest.json"), media_type="application/manifest+json")
+
+@app.get("/sw.js")
+async def get_service_worker():
+    response = FileResponse(os.path.join(STATIC_DIR, "sw.js"), media_type="application/javascript")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
 if os.path.exists(STATIC_DIR):
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

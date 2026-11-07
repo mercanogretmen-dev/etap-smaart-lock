@@ -2,8 +2,20 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>ETAP Akıllı Kilit & Mobil Yönetim</title>
+  
+  <!-- PWA & Mobil Uygulama Desteği -->
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" href="/icons/favicon.png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ETAP Kilit">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="application-name" content="ETAP Kilit">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -13,6 +25,33 @@
 </head>
 <body>
   <div class="app-container">
+    <!-- PWA Kurulum Çubuğu (Tarayıcıda açıldığında görünür) -->
+    <div id="pwaInstallBanner" class="pwa-banner hidden">
+      <div class="pwa-banner-content">
+        <span class="pwa-icon">📲</span>
+        <div class="pwa-text">
+          <strong>Uygulamayı Telefona Yükle</strong>
+          <span>Tam ekran ve kesintisiz kilit açmak için ana ekranınıza ekleyin.</span>
+        </div>
+      </div>
+      <div class="pwa-actions">
+        <button id="pwaInstallBtn" class="btn-pwa-install">Yükle</button>
+        <button class="btn-pwa-dismiss" onclick="dismissPwaBanner()">✕</button>
+      </div>
+    </div>
+
+    <!-- iOS Safari Özel Kurulum Rehberi -->
+    <div id="iosInstallGuide" class="pwa-banner ios-guide hidden">
+      <div class="pwa-banner-content">
+        <span class="pwa-icon">🍏</span>
+        <div class="pwa-text">
+          <strong>iPhone'da Uygulama Olarak Kullanın</strong>
+          <span>Alttaki <strong>Paylaş ⎋</strong> simgesine basıp <strong>"Ana Ekrana Ekle"</strong>yi seçin.</span>
+        </div>
+      </div>
+      <button class="btn-pwa-dismiss" onclick="dismissIosGuide()">✕</button>
+    </div>
+
     <!-- Üst Başlık -->
     <header class="app-header">
       <div class="logo-area">

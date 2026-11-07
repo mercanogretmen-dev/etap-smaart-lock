@@ -23,6 +23,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Çevrimdışı TOTP sayacını başlat
   startTotpGenerator();
+
+  // PWA (Mobil Uygulama) Desteğini Başlat
+  setupPwa();
 });
 
 // -------------------------------------------------------------
@@ -436,4 +439,81 @@ function showToast(text, type = "info") {
   setTimeout(() => {
     toast.classList.add("hidden");
   }, 3500);
+}
+
+// -------------------------------------------------------------
+// 📱 PWA & Mobil Uygulama Kurulum Yöneticisi
+// -------------------------------------------------------------
+let deferredInstallPrompt = null;
+
+function setupPwa() {
+  // 1. Service Worker Kaydı (Çevrimdışı önbellek ve PWA kabiliyeti)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js")
+        .then((reg) => {
+          console.log("📦 ServiceWorker başarıyla devrede:", reg.scope);
+        })
+        .catch((err) => {
+          console.warn("⚠️ ServiceWorker kaydı:", err);
+        });
+    });
+  }
+
+  // 2. Uygulama zaten standalone modunda açılmışsa bildirimleri gizle
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches || 
+                       window.navigator.standalone === true;
+  if (isStandalone) {
+    console.log("📱 Uygulama tam ekran standalone modunda çalışıyor.");
+    return;
+  }
+
+  // 3. Android / Chrome: 'Uygulamayı Yükle' tetikleyicisini dinle
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    const banner = document.getElementById("pwaInstallBanner");
+    if (banner && !sessionStorage.getItem("pwa_dismissed")) {
+      banner.classList.remove("hidden");
+    }
+  });
+
+  const installBtn = document.getElementById("pwaInstallBtn");
+  if (installBtn) {
+    installBtn.addEventListener("click", async () => {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        console.log("Kullanıcı yükleme tercihi:", outcome);
+        deferredInstallPrompt = null;
+        dismissPwaBanner();
+      }
+    });
+  }
+
+  // 4. iOS (iPhone Safari) Tespiti ve Rehber Gösterimi
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  const isIos = /iphone|ipad|ipod/.test(userAgent);
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+  if (isIos && isSafari && !isStandalone && !sessionStorage.getItem("ios_guide_dismissed")) {
+    const iosGuide = document.getElementById("iosInstallGuide");
+    if (iosGuide) {
+      setTimeout(() => {
+        iosGuide.classList.remove("hidden");
+      }, 1200);
+    }
+  }
+}
+
+function dismissPwaBanner() {
+  const banner = document.getElementById("pwaInstallBanner");
+  if (banner) banner.classList.add("hidden");
+  sessionStorage.setItem("pwa_dismissed", "true");
+}
+
+function dismissIosGuide() {
+  const guide = document.getElementById("iosInstallGuide");
+  if (guide) guide.classList.add("hidden");
+  sessionStorage.setItem("ios_guide_dismissed", "true");
 }

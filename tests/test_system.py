@@ -50,6 +50,18 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertEqual(res_js.status_code, 200)
         self.assertIn("fetchOnlineBoards", res_js.text)
 
+        # PWA Manifest & Service Worker & İkon testleri
+        res_manifest = self.client.get("/manifest.json")
+        self.assertEqual(res_manifest.status_code, 200)
+        self.assertIn("ETAP Akıllı Kilit", res_manifest.text)
+
+        res_sw = self.client.get("/sw.js")
+        self.assertEqual(res_sw.status_code, 200)
+        self.assertIn("Service-Worker-Allowed", res_sw.headers)
+
+        res_icon = self.client.get("/icons/icon-192.png")
+        self.assertEqual(res_icon.status_code, 200)
+
     # -------------------------------------------------------------------------
     # 2. Yetkilendirme & Güvenlik PIN Kontrolleri Testi
     # -------------------------------------------------------------------------
