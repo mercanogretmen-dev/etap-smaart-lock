@@ -21,11 +21,11 @@ try:
 except ImportError:
     websockets = None
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate, QProcess
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate, QProcess, QEvent
 from PyQt6.QtGui import QFont, QPixmap, QImage, QKeyEvent, QColor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QGridLayout, QLineEdit, QDialog,
+    QLabel, QPushButton, QGridLayout, QLineEdit, QDialog, QInputDialog,
     QMessageBox, QFrame, QGraphicsDropShadowEffect
 )
 
@@ -267,7 +267,140 @@ def play_alert_sound():
 
 
 # -------------------------------------------------------------
-# 📢 Ortada Açılan Modern İdare Duyuru Kutusu (Modal Popup)
+# 📢 Kilit Ekranı İçine Gömülü Duyuru Katmanı (In-Window Overlay)
+# Bu katman yeni bir X11/OS penceresi açmadığı için Pardus tarafında
+# alt görev çubuğunun (xfce4-panel) KESİNLİKLE ortaya çıkmamasını sağlar.
+# -------------------------------------------------------------
+class AnnouncementOverlayWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.duration_left = 45
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.init_ui()
+        self.hide()
+
+    def init_ui(self):
+        # Yarı saydam koyu karartma arka planı (Backdrop)
+        self.setStyleSheet("background: rgba(0, 0, 0, 0.82);")
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        self.frame = QFrame()
+        self.frame.setFixedSize(700, 390)
+        self.frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0f172a, stop:1 #1e293b);
+                border: 2px solid #38bdf8;
+                border-radius: 24px;
+            }
+        """)
+        glow = QGraphicsDropShadowEffect(self.frame)
+        glow.setBlurRadius(50)
+        glow.setColor(QColor(56, 189, 248, 190))
+        glow.setOffset(0, 4)
+        self.frame.setGraphicsEffect(glow)
+
+        frame_layout = QVBoxLayout(self.frame)
+        frame_layout.setContentsMargins(35, 26, 35, 25)
+        frame_layout.setSpacing(16)
+
+        # Üst Başlık & Kapat Butonu
+        header = QHBoxLayout()
+        icon = QLabel("📢")
+        icon.setFont(QFont("Segoe UI Emoji", 26))
+        header.addWidget(icon)
+
+        title = QLabel("MÜDÜR / İDARE DUYURUSU")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.ExtraBold))
+        title.setStyleSheet("color: #38bdf8; letter-spacing: 1.5px;")
+        header.addWidget(title)
+        header.addStretch()
+
+        btn_close_top = QPushButton("✕")
+        btn_close_top.setFixedSize(36, 36)
+        btn_close_top.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        btn_close_top.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #94a3b8;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 18px;
+            }
+            QPushButton:hover { background: #ef4444; color: white; border-color: #ef4444; }
+        """)
+        btn_close_top.clicked.connect(self.close_announcement)
+        header.addWidget(btn_close_top)
+        frame_layout.addLayout(header)
+
+        # Mesaj Metni
+        self.msg_label = QLabel("")
+        self.msg_label.setFont(QFont("Segoe UI", 16, QFont.Weight.DemiBold))
+        self.msg_label.setStyleSheet("""
+            color: #ffffff;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 20px;
+            line-height: 1.45;
+        """)
+        self.msg_label.setWordWrap(True)
+        self.msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        frame_layout.addWidget(self.msg_label, 1)
+
+        # Alt Çubuk (Geri Sayım & Kapat Butonu)
+        bottom = QHBoxLayout()
+        self.lbl_countdown = QLabel("⏱️ 45 saniye sonra kendiliğinden kapanır")
+        self.lbl_countdown.setFont(QFont("Segoe UI", 11))
+        self.lbl_countdown.setStyleSheet("color: #94a3b8;")
+        bottom.addWidget(self.lbl_countdown)
+        bottom.addStretch()
+
+        btn_dismiss = QPushButton("Tamam / Kapat")
+        btn_dismiss.setFixedSize(140, 42)
+        btn_dismiss.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_dismiss.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #0369a1);
+                color: #ffffff;
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }
+            QPushButton:hover { background: #0284c7; }
+            QPushButton:pressed { background: #075985; }
+        """)
+        btn_dismiss.clicked.connect(self.close_announcement)
+        bottom.addWidget(btn_dismiss)
+        frame_layout.addLayout(bottom)
+
+        layout.addWidget(self.frame)
+
+    def show_announcement(self, message: str, duration_sec: int = 45):
+        self.msg_label.setText(message)
+        self.duration_left = duration_sec
+        self.lbl_countdown.setText(f"⏱️ {self.duration_left} saniye sonra kendiliğinden kapanır")
+        if self.parent():
+            self.setGeometry(0, 0, self.parent().width(), self.parent().height())
+        self.show()
+        self.raise_()
+        self.timer.stop()
+        self.timer.start(1000)
+
+    def close_announcement(self):
+        self.timer.stop()
+        self.hide()
+
+    def tick(self):
+        self.duration_left -= 1
+        if self.duration_left <= 0:
+            self.close_announcement()
+        else:
+            self.lbl_countdown.setText(f"⏱️ {self.duration_left} saniye sonra kendiliğinden kapanır")
+
+
+# -------------------------------------------------------------
+# 📢 Masaüstü Açıkken Ortada Açılan Modern İdare Duyuru Kutusu (Tool Popup)
 # -------------------------------------------------------------
 class AnnouncementModalDialog(QDialog):
     def __init__(self, message: str, duration_sec: int = 45, parent=None):
@@ -276,7 +409,7 @@ class AnnouncementModalDialog(QDialog):
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Dialog
+            Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(680, 380)
@@ -491,16 +624,22 @@ class LockScreenWindow(QMainWindow):
 
         self.entered_pin = ""
         self.is_locked = True
+        self.announcement_overlay = None
 
         self.init_ui()
         self.init_network()
+        self.setup_kiosk_security()
 
     def init_ui(self):
         # Tam Ekran Kiosk Pencere Özellikleri
+        # BypassWindowManagerHint: X11 pencere yöneticisini (XFCE xfwm4) atlar,
+        # böylece Windows+D masaüstünü göster kısayolu kilit ekranını ASLA minimize edemez!
         self.setWindowFlags(
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.FramelessWindowHint
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.BypassWindowManagerHint
         )
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.setStyleSheet("background-color: #0b1120; color: #f8fafc;")
 
         # Ana Düzen
@@ -665,6 +804,57 @@ class LockScreenWindow(QMainWindow):
         self.timer_qr.start(30000)  # Her 30 saniyede bir yeni QR kod
         self.generate_qr()
 
+        # 4. Kilit Ekranına Gömülü Duyuru Katmanı (Görev çubuğunun çıkmasını kesin engeller)
+        self.announcement_overlay = AnnouncementOverlayWidget(self)
+        self.announcement_overlay.hide()
+
+    # -------------------------------------------------------------
+    # 🛡️ Kiosk Modu & Öğrenci Güvenlik Koruması
+    # -------------------------------------------------------------
+    def setup_kiosk_security(self):
+        """Pardus ETAP üzerinde öğrencilerin kilit ekranını aşmasını engelleyen güvenlik koruması."""
+        # 1 saniyelik bekçi (watchdog): Herhangi bir nedenle pencere odağı kaybolursa veya minimize edilirse anında öne çeker
+        self.kiosk_watchdog = QTimer(self)
+        self.kiosk_watchdog.timeout.connect(self.enforce_kiosk_watchdog)
+        self.kiosk_watchdog.start(1000)
+
+    def enforce_kiosk_watchdog(self):
+        if self.is_locked:
+            if self.isMinimized() or not self.isActiveWindow():
+                self.restore_kiosk_fullscreen()
+
+    def show_kiosk_fullscreen(self):
+        """Tam ekran kiosk modunu başlatır ve klavyeyi kilitler."""
+        screen = QApplication.primaryScreen()
+        if screen:
+            self.setGeometry(screen.geometry())
+        self.showFullScreen()
+        self.raise_()
+        self.activateWindow()
+        # Klavyeyi kilit ekranına kilitle (Windows+D, Alt+Tab, Alt+F4, Ctrl+Alt+T engelleme)
+        try:
+            self.grabKeyboard()
+        except Exception:
+            pass
+        if hasattr(self, "announcement_overlay") and self.announcement_overlay:
+            self.announcement_overlay.setGeometry(0, 0, self.width(), self.height())
+
+    def restore_kiosk_fullscreen(self):
+        if not self.is_locked:
+            return
+        self.show_kiosk_fullscreen()
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange and self.is_locked:
+            if self.isMinimized() or not (self.windowState() & Qt.WindowState.WindowFullScreen):
+                QTimer.singleShot(10, self.restore_kiosk_fullscreen)
+        super().changeEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "announcement_overlay") and self.announcement_overlay:
+            self.announcement_overlay.setGeometry(0, 0, self.width(), self.height())
+
     # -------------------------------------------------------------
     # 🕒 Saat & Dinamik QR Kod
     # -------------------------------------------------------------
@@ -731,6 +921,12 @@ class LockScreenWindow(QMainWindow):
     # -------------------------------------------------------------
     def unlock_board(self, by: str = "Uzaktan"):
         self.is_locked = False
+        try:
+            self.releaseKeyboard()
+        except Exception:
+            pass
+        if hasattr(self, "announcement_overlay") and self.announcement_overlay:
+            self.announcement_overlay.hide()
         self.hide()  # Kilit ekranını gizle, masaüstü açılsın!
 
         # Masaüstünde küçük bir yeniden kilitleme butonu / tepsi simgesi göster
@@ -740,7 +936,7 @@ class LockScreenWindow(QMainWindow):
         self.is_locked = True
         if hasattr(self, "relock_btn") and self.relock_btn:
             self.relock_btn.hide()
-        self.showFullScreen()
+        self.show_kiosk_fullscreen()
 
     def show_floating_relock_button(self):
         """Masaüstü açıkken sağ alt köşede duran minik 'Kilitle' butonu"""
@@ -805,9 +1001,14 @@ class LockScreenWindow(QMainWindow):
         # 2. Üstteki mavi bandı da başlat
         self.banner.show_message(message, duration_sec)
 
-        # 3. Ortada büyük şık modal kutuyu aç (Kapanabilir)
-        dlg = AnnouncementModalDialog(message, duration_sec, self)
-        dlg.exec()
+        # 3. Kilitliyse: Dahili gömülü katmanda göster (Görev çubuğu KESİNLİKLE çıkmaz!)
+        if self.is_locked:
+            if hasattr(self, "announcement_overlay") and self.announcement_overlay:
+                self.announcement_overlay.show_announcement(message, duration_sec)
+        else:
+            # Tahta açıksa: Masaüstünde yüzen şık bildirim penceresi aç
+            dlg = AnnouncementModalDialog(message, duration_sec, None)
+            dlg.show()
 
     def handle_poweroff(self):
         """Tahtanın gücünü kapatır (shutdown)."""
@@ -849,6 +1050,10 @@ class LockScreenWindow(QMainWindow):
         # Basit onay
         if self.entered_pin == self.yonetici_sifre or self.entered_pin == self.ogretmen_pin:
             self.clear_pin()
+            try:
+                self.releaseKeyboard()
+            except Exception:
+                pass
             dlg = SettingsDialog(self.sinif_adi, self.sunucu_url, self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 new_board = dlg.input_board.text().strip() or "9-A"
@@ -890,6 +1095,8 @@ class LockScreenWindow(QMainWindow):
                     "Ayarlar Kaydedildi",
                     f"✅ Tahta adı '{self.sinif_adi}' olarak güncellendi ve sunucuya anında bildirildi!"
                 )
+            if self.is_locked:
+                self.show_kiosk_fullscreen()
         else:
             self.pin_display.setText("ŞİFRE GİRİN")
             QTimer.singleShot(1500, self.clear_pin)
@@ -898,23 +1105,73 @@ class LockScreenWindow(QMainWindow):
     # 🛑 Sistem Tuşlarını Engelleme (Kiosk Güvenliği)
     # -------------------------------------------------------------
     def keyPressEvent(self, event: QKeyEvent):
-        # Geliştirici / Yetkili Acil Çıkış Kısayolu: Ctrl+Q
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Q:
-            QApplication.quit()
-            return
-        # Alt+F4 veya Esc ile kapatmayı engelle
-        if event.key() == Qt.Key.Key_Escape:
-            event.ignore()
-        elif event.modifiers() == Qt.KeyboardModifier.AltModifier and event.key() == Qt.Key.Key_F4:
-            event.ignore()
-        else:
+        if not self.is_locked:
             super().keyPressEvent(event)
+            return
+
+        # 1. Yetkili / Yönetici Acil Çıkış Kısayolu: Ctrl + Shift + Q
+        # ÖĞRENCİ ENGELİ: Şifresiz doğrudan kapanamaz!
+        if (event.modifiers() == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier) 
+            and event.key() == Qt.Key.Key_Q):
+            self.prompt_admin_exit()
+            return
+
+        # 2. Fiziksel klavyeden rakam tuşları (0-9 ve Numpad 0-9)
+        key = event.key()
+        text = event.text()
+        if key in [Qt.Key.Key_0, Qt.Key.Key_1, Qt.Key.Key_2, Qt.Key.Key_3, Qt.Key.Key_4,
+                   Qt.Key.Key_5, Qt.Key.Key_6, Qt.Key.Key_7, Qt.Key.Key_8, Qt.Key.Key_9]:
+            self.append_pin(text)
+            return
+
+        # 3. Enter / Return: PIN'i doğrula
+        if key in [Qt.Key.Key_Return, Qt.Key.Key_Enter]:
+            self.verify_pin()
+            return
+
+        # 4. Backspace / Delete: Son karakteri sil veya temizle
+        if key == Qt.Key.Key_Backspace:
+            if len(self.entered_pin) > 0:
+                self.entered_pin = self.entered_pin[:-1]
+                self.pin_display.setText("• " * len(self.entered_pin) if self.entered_pin else "• • • •")
+            return
+        if key == Qt.Key.Key_Delete:
+            self.clear_pin()
+            return
+
+        # 5. TÜM DİĞER SİSTEM KISAYOLLARINI BLOKE ET:
+        # Windows (Super) tuşu, Windows+D, Alt+Tab, Alt+F4, Ctrl+Alt+T, Esc, F11 vb.
+        event.ignore()
+
+    def prompt_admin_exit(self):
+        """Yalnızca yönetici şifresini bilen yetkilinin programı sonlandırmasına izin verir."""
+        try:
+            self.releaseKeyboard()
+        except Exception:
+            pass
+        pwd, ok = QInputDialog.getText(
+            self,
+            "Yönetici Çıkışı",
+            "Kilit ekranını kapatmak için yetkili şifresini girin:",
+            QLineEdit.EchoMode.Password
+        )
+        if ok and (pwd == self.yonetici_sifre or pwd == self.ogretmen_pin):
+            self.is_locked = False
+            QApplication.quit()
+        else:
+            if ok:
+                QMessageBox.warning(self, "Yetkisiz Erişim", "Hatalı şifre girildi!")
+            self.show_kiosk_fullscreen()
 
     def closeEvent(self, event):
-        # Kullanıcının pencereyi kapatmasını engelle (Sadece yetkili kapatabilir)
+        # Kullanıcının pencereyi kapatmasını engelle
         if self.is_locked:
             event.ignore()
         else:
+            try:
+                self.releaseKeyboard()
+            except Exception:
+                pass
             event.accept()
 
 
@@ -924,7 +1181,7 @@ class LockScreenWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     window = LockScreenWindow()
-    window.showFullScreen()
+    window.show_kiosk_fullscreen()
     sys.exit(app.exec())
 
 if __name__ == "__main__":
