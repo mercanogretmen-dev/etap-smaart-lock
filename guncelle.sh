@@ -27,5 +27,8 @@ sudo bash "$SCRIPT_DIR/client-tahta/kur_pardus.sh"
 
 echo "========================================================"
 echo "✅ GÜNCELLEME BAŞARIYLA TAMAMLANDI!"
-echo "🚀 Yeni kilit ekranı arka planda otomatik başlatıldı."
+echo "🚀 Kilit ekranı başlatılıyor..."
 echo "========================================================"
+
+# Kilit ekranını mevcut kullanıcı oturumunda arka planda başlat
+nohup python3 /opt/etap-smartlock/kilit_ekrani.py > /dev/null 2>&1 &

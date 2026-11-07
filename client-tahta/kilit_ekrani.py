@@ -55,10 +55,10 @@ def load_config():
             try:
                 config.read(p, encoding="utf-8")
                 loaded_from = p
-                print(f"📖 Config en güncel dosyadan yüklendi: {p}")
+                print(f"[CONFIG] En guncel dosyadan yuklendi: {p}")
                 break
             except Exception as e:
-                print(f"Config okuma hatası [{p}]: {e}")
+                print(f"[CONFIG] Okuma hatasi [{p}]: {e}")
 
     if "GENEL" not in config:
         config["GENEL"] = {}
@@ -128,7 +128,7 @@ def save_config(config):
             except Exception:
                 pass
             saved_any = True
-            print(f"💾 Config kaydedildi: {p}")
+            print(f"[CONFIG] Kaydedildi: {p}")
         except Exception as e:
             # İzin yetmeyen dizinleri geç
             pass
@@ -200,10 +200,10 @@ class WebSocketClientThread(QThread):
             try:
                 payload = json.dumps({"action": "update_name", "name": new_name})
                 asyncio.run_coroutine_threadsafe(self.ws.send(payload), self.loop)
-                print(f"📤 WebSocket üzerinden anlık isim güncellemesi gönderildi: {new_name}")
+                print(f"[WS] Isim guncellemesi gonderildi: {new_name}")
                 return True
             except Exception as e:
-                print(f"İsim gönderme hatası: {e}")
+                print(f"[WS] Isim gonderme hatasi: {e}")
         return False
 
     def stop(self):

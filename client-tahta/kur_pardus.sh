@@ -50,7 +50,8 @@ cat << 'EOF' > "$AUTOSTART_FILE"
 Type=Application
 Name=ETAP Akıllı Kilit
 Comment=Pardus ETAP Akıllı Tahta Kilit Sistemi
-Exec=python3 /opt/etap-smartlock/kilit_ekrani.py
+Exec=/usr/bin/python3 /opt/etap-smartlock/kilit_ekrani.py
+Path=/opt/etap-smartlock
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -65,7 +66,8 @@ cat << 'EOF' > "$DESKTOP_ENTRY"
 Type=Application
 Name=ETAP Akıllı Kilit
 Comment=Akıllı Tahta Kilit Sistemi
-Exec=python3 /opt/etap-smartlock/kilit_ekrani.py
+Exec=/usr/bin/python3 /opt/etap-smartlock/kilit_ekrani.py
+Path=/opt/etap-smartlock
 Icon=system-lock-screen
 Terminal=false
 Categories=Utility;System;
