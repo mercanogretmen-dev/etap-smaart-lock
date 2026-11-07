@@ -59,14 +59,18 @@ class BoardConnectionManager:
         self.board_names[board_id] = new_name
         logger.info(f"✏️ Tahta adı güncellendi: [{board_id}] '{old_name}' -> '{new_name}'")
 
-    def disconnect(self, board_id: str):
+    def disconnect(self, board_id: str, websocket: Optional[WebSocket] = None):
         if board_id in self.active_connections:
-            del self.active_connections[board_id]
-        if board_id in self.board_status:
-            del self.board_status[board_id]
-        if board_id in self.board_last_seen:
-            del self.board_last_seen[board_id]
-        logger.info(f"🔴 Tahta ayrıldı ve listeden temizlendi: [{board_id}]")
+            # SADECE ayrılan websocket o anki aktif websocket ise sil (yeniden bağlanma çakışmalarını önler)
+            if websocket is None or self.active_connections.get(board_id) == websocket:
+                del self.active_connections[board_id]
+                if board_id in self.board_status:
+                    del self.board_status[board_id]
+                if board_id in self.board_last_seen:
+                    del self.board_last_seen[board_id]
+                logger.info(f"🔴 Tahta ayrıldı ve listeden temizlendi: [{board_id}]")
+            else:
+                logger.info(f"ℹ️ [{board_id}] için eski bir soket kapandı, mevcut aktif soket korunuyor.")
 
     def is_connected(self, board_id: str) -> bool:
         return board_id in self.active_connections
@@ -166,7 +170,8 @@ class BroadcastRequest(BaseModel):
 # -------------------------------------------------------------
 @app.websocket("/ws/board/{board_id}")
 async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Optional[str] = None):
-    initial_name = name or board_id
+    query_name = websocket.query_params.get("name")
+    initial_name = query_name or name or board_id
     await manager.connect(board_id, websocket, initial_name)
     try:
         # Tahtaya ilk bağlantı onayı gönder
@@ -191,16 +196,20 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Op
                     new_name = msg.get("name", "").strip()
                     if new_name:
                         manager.update_name(board_id, new_name)
+                        await websocket.send_text(json.dumps({
+                            "action": "name_updated",
+                            "name": new_name
+                        }))
                 elif action == "ping":
                     await websocket.send_text(json.dumps({"action": "pong", "time": time.time()}))
             except json.JSONDecodeError:
                 pass
 
     except WebSocketDisconnect:
-        manager.disconnect(board_id)
+        manager.disconnect(board_id, websocket)
     except Exception as e:
         logger.error(f"WebSocket istisnası [{board_id}]: {e}")
-        manager.disconnect(board_id)
+        manager.disconnect(board_id, websocket)
 
 # -------------------------------------------------------------
 # 📱 Mobil REST API Uç Noktaları (Öğretmen ve Müdür Telefonu)

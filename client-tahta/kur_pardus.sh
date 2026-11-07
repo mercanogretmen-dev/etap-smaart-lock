@@ -21,12 +21,25 @@ apt install -y python3 python3-pip python3-pyqt6 python3-qrcode python3-pil pyth
 }
 
 # 2. Kurulum dizinini hazırla
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/etap-smartlock"
+SYS_CONF_DIR="/etc/etap-smartlock"
+
 echo "📁 Program dosyaları ${INSTALL_DIR} dizinine kopyalanıyor..."
 mkdir -p "$INSTALL_DIR"
-cp -r ./* "$INSTALL_DIR/"
+cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/kilit_ekrani.py"
 chmod -R 777 "$INSTALL_DIR"
+chmod 666 "$INSTALL_DIR"/config.ini 2>/dev/null || true
+
+# 2.1 Kalıcı ve ortak ayar dizini oluştur (/etc/etap-smartlock)
+# Bu dizin hem ogretmen hem de etapadmin kullanıcıları tarafından yazılabilir olmalıdır
+mkdir -p "$SYS_CONF_DIR"
+chmod 777 "$SYS_CONF_DIR"
+if [ ! -f "$SYS_CONF_DIR/config.ini" ] && [ -f "$SCRIPT_DIR/config.ini" ]; then
+    cp "$SCRIPT_DIR/config.ini" "$SYS_CONF_DIR/config.ini"
+fi
+chmod 666 "$SYS_CONF_DIR"/config.ini 2>/dev/null || true
 
 # 3. Otomatik Başlatma (Autostart) Kaydı Oluştur
 AUTOSTART_FILE="/etc/xdg/autostart/etap-smartlock.desktop"

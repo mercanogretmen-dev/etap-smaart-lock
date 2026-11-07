@@ -174,6 +174,13 @@ class TestEtapSmartLockSystem(unittest.TestCase):
             pong_msg = websocket.receive_json()
             self.assertEqual(pong_msg.get("action"), "pong")
 
+            # 7.1 Canlı isim güncelleme testi (WebSocket kesilmeden ad değiştirme)
+            websocket.send_json({"action": "update_name", "name": "10-B Yeni Şube"})
+            update_ack = websocket.receive_json()
+            self.assertEqual(update_ack.get("action"), "name_updated")
+            self.assertEqual(update_ack.get("name"), "10-B Yeni Şube")
+            self.assertEqual(manager.board_names[board_id], "10-B Yeni Şube")
+
             # 8. Güç kapatma (Power off / Shutdown) testi
             res_power = self.client.post("/api/poweroff", json={
                 "board_id": board_id,
@@ -185,6 +192,11 @@ class TestEtapSmartLockSystem(unittest.TestCase):
 
         # 9. WebSocket oturumu kapandıktan sonra tahta çevrimdışı görünmeli
         self.assertFalse(manager.is_connected(board_id))
+
+        # 10. Çevrimdışı hayalet kayıtları temizleme testi
+        res_cleanup = self.client.post("/api/boards/cleanup", json={"admin_pin": config.ADMIN_PIN})
+        self.assertEqual(res_cleanup.status_code, 200)
+        self.assertNotIn(board_id, manager.board_names)
 
     # -------------------------------------------------------------------------
     # 4. Çevrimdışı TOTP PIN Algoritması Matematiksel Senkronizasyon Testi
