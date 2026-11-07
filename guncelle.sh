@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# ETAP Akıllı Kilit — Hızlı Güncelleme ve Yeniden Başlatma Betiği
+# ==============================================================================
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+echo "========================================================"
+echo "🔄 ETAP Akıllı Kilit Güncelleniyor..."
+echo "========================================================"
+
+# 1. Çalışan eski kilit ekranını kapat
+echo "🛑 Eski kilit ekranı durduruluyor..."
+sudo pkill -f kilit_ekrani.py || true
+sleep 1
+
+# 2. GitHub'dan en son kodları çek
+echo "📥 GitHub'dan güncellemeler çekiliyor..."
+git pull
+
+# 3. Kurulum betiğini çalıştır ve sistemi güncelle
+echo "⚙️ Yeni dosyalar sisteme uygulanıyor..."
+sudo bash "$SCRIPT_DIR/client-tahta/kur_pardus.sh"
+
+echo "========================================================"
+echo "✅ GÜNCELLEME BAŞARIYLA TAMAMLANDI!"
+echo "🚀 Yeni kilit ekranı arka planda otomatik başlatıldı."
+echo "========================================================"
