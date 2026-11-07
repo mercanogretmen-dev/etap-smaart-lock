@@ -291,6 +291,69 @@ async function sendLock() {
 }
 
 // -------------------------------------------------------------
+// ⚡ Tahtayı Kapatma (Güç Kapatma / Shutdown)
+// -------------------------------------------------------------
+function confirmPoweroff() {
+  const boardId = getSelectedBoardId();
+  const pin = document.getElementById("teacherPin").value.trim();
+
+  if (!boardId) {
+    showToast("Lütfen kapatılacak tahtayı seçin!", "error");
+    return;
+  }
+  if (!pin) {
+    showToast("Lütfen yetkili PIN kodunuzu girin!", "error");
+    return;
+  }
+
+  const modal = document.getElementById("powerModal");
+  const modalDesc = document.getElementById("modalDesc");
+  const displayName = document.getElementById("customBoardInput").value || boardId;
+
+  modalDesc.textContent = `'${displayName}' akıllı tahtası tamamen kapatılacaktır. Tahta üzerindeki tüm pencereler kapanacaktır. Devam etmek istiyor musunuz?`;
+  modal.classList.remove("hidden");
+}
+
+function closePowerModal() {
+  document.getElementById("powerModal").classList.add("hidden");
+}
+
+async function sendPoweroff() {
+  const boardId = getSelectedBoardId();
+  const pin = document.getElementById("teacherPin").value.trim();
+  const confirmBtn = document.getElementById("modalConfirmBtn");
+
+  closePowerModal();
+
+  if (!boardId || !pin) {
+    showToast("Tahta ve PIN kodu gereklidir!", "error");
+    return;
+  }
+
+  showToast("Tahtaya kapatma komutu iletiliyor...", "info");
+
+  try {
+    const res = await fetch("/api/poweroff", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ board_id: boardId, pin: pin })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(data.message, "success");
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    } else {
+      showToast(data.detail || "Kapatma komutu gönderilemedi!", "error");
+    }
+  } catch (err) {
+    showToast("Sunucuya ulaşılamadı!", "error");
+  } finally {
+    setTimeout(fetchOnlineBoards, 3000);
+  }
+}
+
+// -------------------------------------------------------------
 // 📢 Müdür / İdare Duyuru Yayını
 // -------------------------------------------------------------
 async function sendBroadcast() {

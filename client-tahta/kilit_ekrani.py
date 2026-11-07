@@ -172,6 +172,173 @@ class WebSocketClientThread(QThread):
 
 
 # -------------------------------------------------------------
+# 🔊 Sesli Uyarı ve Bildirim Zili
+# -------------------------------------------------------------
+def play_alert_sound():
+    """Müdür duyurusu geldiğinde dikkat çeken hoş bir melodi çalar."""
+    # 1. Windows platformu
+    if sys.platform == "win32":
+        try:
+            import winsound
+            winsound.Beep(784, 150)  # G5
+            time.sleep(0.04)
+            winsound.Beep(1046, 280) # C6
+            return
+        except Exception:
+            pass
+
+    # 2. Linux / Pardus ETAP üzerinde sistem seslerini dene
+    for cmd in [
+        "canberra-gtk-play -i message",
+        "paplay /usr/share/sounds/freedesktop/stereo/complete.oga",
+        "paplay /usr/share/sounds/freedesktop/stereo/bell.oga"
+    ]:
+        if os.system(f"{cmd} > /dev/null 2>&1") == 0:
+            return
+
+    # 3. Saf Python ile dahili 2 tonlu melodi üret ve aplay ile çal
+    try:
+        wav_path = "/tmp/etap_chime.wav"
+        if not os.path.exists(wav_path):
+            import wave, math, struct
+            sr = 22050
+            dur = 0.45
+            with wave.open(wav_path, "w") as wf:
+                wf.setparams((1, 2, sr, int(sr * dur), "NONE", "not compressed"))
+                for i in range(int(sr * dur)):
+                    t = float(i) / sr
+                    freq = 659.25 if t < 0.18 else 880.0
+                    decay = max(0.0, 1.0 - (t / dur))
+                    val = int(math.sin(2.0 * math.pi * freq * t) * 16383 * decay)
+                    wf.writeframes(struct.pack("<h", val))
+        os.system(f"aplay -q {wav_path} > /dev/null 2>&1 &")
+    except Exception:
+        pass
+
+
+# -------------------------------------------------------------
+# 📢 Ortada Açılan Modern İdare Duyuru Kutusu (Modal Popup)
+# -------------------------------------------------------------
+class AnnouncementModalDialog(QDialog):
+    def __init__(self, message: str, duration_sec: int = 45, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("İdare Duyurusu")
+        self.setWindowFlags(
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.Dialog
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedSize(680, 380)
+
+        self.duration_left = duration_sec
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        self.frame = QFrame()
+        self.frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0f172a, stop:1 #1e293b);
+                border: 2px solid #38bdf8;
+                border-radius: 24px;
+            }
+        """)
+        glow = QGraphicsDropShadowEffect(self.frame)
+        glow.setBlurRadius(50)
+        glow.setColor(QColor(56, 189, 248, 190))
+        glow.setOffset(0, 4)
+        self.frame.setGraphicsEffect(glow)
+
+        frame_layout = QVBoxLayout(self.frame)
+        frame_layout.setContentsMargins(35, 26, 35, 25)
+        frame_layout.setSpacing(16)
+
+        # Üst Başlık & Kapat Butonu
+        header = QHBoxLayout()
+        icon = QLabel("📢")
+        icon.setFont(QFont("Segoe UI Emoji", 26))
+        header.addWidget(icon)
+
+        title = QLabel("MÜDÜR / İDARE DUYURUSU")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.ExtraBold))
+        title.setStyleSheet("color: #38bdf8; letter-spacing: 1.5px;")
+        header.addWidget(title)
+        header.addStretch()
+
+        btn_close_top = QPushButton("✕")
+        btn_close_top.setFixedSize(36, 36)
+        btn_close_top.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        btn_close_top.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #94a3b8;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 18px;
+            }
+            QPushButton:hover { background: #ef4444; color: white; border-color: #ef4444; }
+        """)
+        btn_close_top.clicked.connect(self.accept)
+        header.addWidget(btn_close_top)
+        frame_layout.addLayout(header)
+
+        # Mesaj Metni
+        msg_label = QLabel(message)
+        msg_label.setFont(QFont("Segoe UI", 16, QFont.Weight.DemiBold))
+        msg_label.setStyleSheet("""
+            color: #ffffff;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 20px;
+            line-height: 1.45;
+        """)
+        msg_label.setWordWrap(True)
+        msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        frame_layout.addWidget(msg_label, 1)
+
+        # Alt Çubuk (Geri Sayım & Kapat Butonu)
+        bottom = QHBoxLayout()
+        self.lbl_countdown = QLabel(f"⏱️ {self.duration_left} saniye sonra kendiliğinden kapanır")
+        self.lbl_countdown.setFont(QFont("Segoe UI", 11))
+        self.lbl_countdown.setStyleSheet("color: #94a3b8;")
+        bottom.addWidget(self.lbl_countdown)
+        bottom.addStretch()
+
+        btn_dismiss = QPushButton("Tamam / Kapat")
+        btn_dismiss.setFixedSize(140, 42)
+        btn_dismiss.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_dismiss.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #0369a1);
+                color: #ffffff;
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }
+            QPushButton:hover { background: #0284c7; }
+            QPushButton:pressed { background: #075985; }
+        """)
+        btn_dismiss.clicked.connect(self.accept)
+        bottom.addWidget(btn_dismiss)
+        frame_layout.addLayout(bottom)
+
+        layout.addWidget(self.frame)
+
+        # Geri sayım zamanlayıcısı
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(1000)
+
+    def tick(self):
+        self.duration_left -= 1
+        if self.duration_left <= 0:
+            self.timer.stop()
+            self.accept()
+        else:
+            self.lbl_countdown.setText(f"⏱️ {self.duration_left} saniye sonra kendiliğinden kapanır")
+
+
+# -------------------------------------------------------------
 # 📢 Mavi Işıklı Kayan Bant Bileşeni (Müdür Duyurusu)
 # -------------------------------------------------------------
 class BlueBannerTicker(QFrame):
@@ -305,9 +472,14 @@ class LockScreenWindow(QMainWindow):
         top_layout.setContentsMargins(30, 0, 30, 0)
 
         self.lbl_class = QLabel(f"🖥️ {self.sinif_adi}")
-        self.lbl_class.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        self.lbl_class.setStyleSheet("color: #38bdf8;")
+        self.lbl_class.setFont(QFont("Segoe UI", 16, QFont.Weight.ExtraBold))
+        self.lbl_class.setStyleSheet("color: #38bdf8; background: rgba(56, 189, 248, 0.12); padding: 6px 18px; border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.25);")
         top_layout.addWidget(self.lbl_class)
+
+        lbl_dev = QLabel(f"🆔 {self.cihaz_id}")
+        lbl_dev.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        lbl_dev.setStyleSheet("color: #64748b; background: rgba(255, 255, 255, 0.04); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06);")
+        top_layout.addWidget(lbl_dev)
 
         top_layout.addStretch()
 
@@ -569,10 +741,54 @@ class LockScreenWindow(QMainWindow):
             self.unlock_board(by="Mobil Uygulama")
         elif action == "lock":
             self.lock_board()
+        elif action == "poweroff":
+            self.handle_poweroff()
         elif action == "banner_message":
             msg = data.get("message", "")
-            duration = data.get("duration_sec", 60)
-            self.banner.show_message(msg, duration)
+            duration = data.get("duration_sec", 45)
+            self.show_announcement(msg, duration)
+
+    def show_announcement(self, message: str, duration_sec: int = 45):
+        # 1. Sesli melodi çal
+        play_alert_sound()
+
+        # 2. Üstteki mavi bandı da başlat
+        self.banner.show_message(message, duration_sec)
+
+        # 3. Ortada büyük şık modal kutuyu aç (Kapanabilir)
+        dlg = AnnouncementModalDialog(message, duration_sec, self)
+        dlg.exec()
+
+    def handle_poweroff(self):
+        """Tahtanın gücünü kapatır (shutdown)."""
+        dlg = QDialog(self)
+        dlg.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        dlg.setStyleSheet("background: #0f172a; border: 2px solid #ef4444; border-radius: 20px; padding: 25px;")
+        l = QVBoxLayout(dlg)
+        icon = QLabel("🔌")
+        icon.setFont(QFont("Segoe UI Emoji", 40))
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        l.addWidget(icon)
+        t = QLabel("Akıllı Tahta Kapatılıyor...")
+        t.setFont(QFont("Segoe UI", 20, QFont.Weight.Bold))
+        t.setStyleSheet("color: #f87171;")
+        t.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        l.addWidget(t)
+        sub = QLabel("Sistem gücü kesiliyor, lütfen bekleyiniz.")
+        sub.setFont(QFont("Segoe UI", 12))
+        sub.setStyleSheet("color: #94a3b8;")
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        l.addWidget(sub)
+        dlg.show()
+        QApplication.processEvents()
+
+        QTimer.singleShot(1800, self.execute_poweroff_command)
+
+    def execute_poweroff_command(self):
+        if sys.platform == "win32":
+            os.system("shutdown /s /t 2")
+        else:
+            os.system("systemctl poweroff || shutdown -h now || poweroff")
 
     # -------------------------------------------------------------
     # ⚙️ Ayarlar

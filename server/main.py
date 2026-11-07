@@ -151,6 +151,10 @@ class LockRequest(BaseModel):
     board_id: str
     pin: str
 
+class PoweroffRequest(BaseModel):
+    board_id: str
+    pin: str
+
 class BroadcastRequest(BaseModel):
     admin_pin: str
     target: str  # "all" veya belirli bir "board_id" (örn: "9-A")
@@ -289,6 +293,40 @@ async def lock_board(req: LockRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Kilit komutu iletilemedi."
+        )
+
+@app.post("/api/poweroff")
+async def poweroff_board(req: PoweroffRequest):
+    """Öğretmen veya İdare tarafından tahtayı tamamen kapatma (shutdown) emri"""
+    if req.pin != config.TEACHER_PIN and req.pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı PIN Kodu! Tahtayı kapatmak için yetkili şifresi gereklidir."
+        )
+
+    target_id = manager.find_board(req.board_id)
+    if not target_id or not manager.is_connected(target_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"'{req.board_id}' tahtası çevrimdışı."
+        )
+
+    board_name = manager.board_names.get(target_id, target_id)
+    sent = await manager.send_to_board(target_id, {
+        "action": "poweroff",
+        "by": "remote_user",
+        "timestamp": time.time()
+    })
+
+    if sent:
+        return {
+            "success": True,
+            "message": f"'{board_name}' tahtasına kapatma emri iletildi. Tahta kapanıyor... 🔌"
+        }
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Kapatma sinyali iletilemedi."
         )
 
 @app.post("/api/broadcast")

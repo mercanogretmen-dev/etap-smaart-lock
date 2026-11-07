@@ -174,7 +174,16 @@ class TestEtapSmartLockSystem(unittest.TestCase):
             pong_msg = websocket.receive_json()
             self.assertEqual(pong_msg.get("action"), "pong")
 
-        # 8. WebSocket oturumu kapandıktan sonra tahta çevrimdışı görünmeli
+            # 8. Güç kapatma (Power off / Shutdown) testi
+            res_power = self.client.post("/api/poweroff", json={
+                "board_id": board_id,
+                "pin": config.TEACHER_PIN
+            })
+            self.assertEqual(res_power.status_code, 200)
+            power_cmd = websocket.receive_json()
+            self.assertEqual(power_cmd.get("action"), "poweroff")
+
+        # 9. WebSocket oturumu kapandıktan sonra tahta çevrimdışı görünmeli
         self.assertFalse(manager.is_connected(board_id))
 
     # -------------------------------------------------------------------------
