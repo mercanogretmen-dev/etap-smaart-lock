@@ -22,8 +22,11 @@ try:
 except ImportError:
     websockets = None
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate, QProcess, QEvent
-from PyQt6.QtGui import QFont, QPixmap, QImage, QKeyEvent, QColor, QIcon
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate, QProcess, QEvent, QRectF, QPointF
+from PyQt6.QtGui import (
+    QFont, QPixmap, QImage, QKeyEvent, QColor, QIcon,
+    QPainter, QPainterPath, QLinearGradient, QRadialGradient, QPen, QBrush, QFontMetrics
+)
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QGridLayout, QLineEdit, QDialog, QInputDialog,
@@ -1169,6 +1172,396 @@ class AdminExitOverlayWidget(QWidget):
 
 
 # -------------------------------------------------------------
+# ✨ Özel Vektörel Çizim Bileşenleri (Sıfır Piksel Kırılması & Gerçek Buzlu Cam)
+# Qt QSS border-radius kırılmalarını önlemek için QPainter Antialiasing kullanılır.
+# -------------------------------------------------------------
+class AmbientBackgroundWidget(QWidget):
+    """Arka planda modern siber-uzay ışık küreleri (Aurora), devre yolları (Circuit Traces) ve filigran deseni çizer."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._watermark_pix = None
+        wm_path = get_asset_path("mercan_robotik_icon.png")
+        if os.path.exists(wm_path):
+            self._watermark_pix = QPixmap(wm_path)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        w, h = float(self.width()), float(self.height())
+
+        # 1. Derin Gece Mavisi / Siber Uzay Ana Gradyan
+        bg_grad = QLinearGradient(0, 0, w, h)
+        bg_grad.setColorAt(0.0, QColor(4, 10, 22))
+        bg_grad.setColorAt(0.35, QColor(9, 22, 44))
+        bg_grad.setColorAt(0.70, QColor(13, 30, 56))
+        bg_grad.setColorAt(1.0, QColor(5, 12, 26))
+        painter.fillRect(self.rect(), bg_grad)
+
+        # 2. Yumuşak Aurora Işık Küreleri (Buzlu camın arkasından parlayan derinlik ışıkları)
+        orb1 = QRadialGradient(QPointF(w * 0.25, h * 0.50), max(w, h) * 0.42)
+        orb1.setColorAt(0.0, QColor(14, 165, 233, 72))
+        orb1.setColorAt(0.45, QColor(2, 132, 199, 28))
+        orb1.setColorAt(1.0, QColor(14, 165, 233, 0))
+        painter.fillRect(self.rect(), orb1)
+
+        orb2 = QRadialGradient(QPointF(w * 0.76, h * 0.48), max(w, h) * 0.40)
+        orb2.setColorAt(0.0, QColor(255, 86, 67, 60))
+        orb2.setColorAt(0.45, QColor(225, 29, 72, 22))
+        orb2.setColorAt(1.0, QColor(255, 86, 67, 0))
+        painter.fillRect(self.rect(), orb2)
+
+        orb3 = QRadialGradient(QPointF(w * 0.50, h * 0.16), max(w, h) * 0.32)
+        orb3.setColorAt(0.0, QColor(56, 189, 248, 48))
+        orb3.setColorAt(1.0, QColor(56, 189, 248, 0))
+        painter.fillRect(self.rect(), orb3)
+
+        # 3. Modern Geometrik Teknoloji Ağı (Tech Grid)
+        step = 56
+        grid_pen = QPen(QColor(125, 211, 252, 14), 1.0)
+        painter.setPen(grid_pen)
+        for x in range(0, int(w) + step, step):
+            painter.drawLine(x, 0, x, int(h))
+        for y in range(0, int(h) + step, step):
+            painter.drawLine(0, y, int(w), y)
+
+        # Diyagonal Siber Işık Çizgileri (Buzlu cam arkasında kırılma etkisi yaratır)
+        diag_pen = QPen(QColor(56, 189, 248, 12), 1.2)
+        painter.setPen(diag_pen)
+        for offset in range(-int(h), int(w) + int(h), step * 3):
+            painter.drawLine(offset, 0, offset + int(h * 0.65), int(h))
+
+        # 4. Siber Devre Yolları (Circuit Traces) — Logodaki devre hatlarıyla uyumlu
+        circuit_pen_cyan = QPen(QColor(56, 189, 248, 42), 1.8)
+        circuit_pen_coral = QPen(QColor(255, 94, 77, 38), 1.8)
+        traces = [
+            # Sol üst ve alt devre hatları (Turkuaz)
+            (circuit_pen_cyan, [(0, h * 0.18), (w * 0.08, h * 0.18), (w * 0.13, h * 0.25), (w * 0.22, h * 0.25)]),
+            (circuit_pen_cyan, [(0, h * 0.82), (w * 0.10, h * 0.82), (w * 0.15, h * 0.74), (w * 0.26, h * 0.74)]),
+            (circuit_pen_cyan, [(w * 0.32, h * 0.12), (w * 0.38, h * 0.18), (w * 0.46, h * 0.18)]),
+            # Sağ üst ve alt devre hatları (Mercan)
+            (circuit_pen_coral, [(w, h * 0.20), (w * 0.91, h * 0.20), (w * 0.86, h * 0.28), (w * 0.76, h * 0.28)]),
+            (circuit_pen_coral, [(w, h * 0.80), (w * 0.89, h * 0.80), (w * 0.84, h * 0.72), (w * 0.72, h * 0.72)]),
+            (circuit_pen_coral, [(w * 0.66, h * 0.86), (w * 0.60, h * 0.80), (w * 0.52, h * 0.80)]),
+        ]
+        for pen, pts in traces:
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            path = QPainterPath()
+            path.moveTo(pts[0][0], pts[0][1])
+            for px, py in pts[1:]:
+                path.lineTo(px, py)
+            painter.drawPath(path)
+            # Devre uçlarında parlayan halka düğümler
+            end_x, end_y = pts[-1]
+            painter.setBrush( QColor(10, 23, 44, 220))
+            painter.drawEllipse(QPointF(end_x, end_y), 4.5, 4.5)
+
+        # Kesişim noktalarında mikro parıltılar
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(56, 189, 248, 35))
+        for x in range(step, int(w), step * 2):
+            for y in range(step, int(h), step * 2):
+                painter.drawEllipse(QPointF(x, y), 2.0, 2.0)
+
+        # 5. Arka Plan Köşe Filigranı (Buzlu camın altında hafif teknoloji amblemi)
+        if self._watermark_pix and not self._watermark_pix.isNull():
+            painter.save()
+            painter.setOpacity(0.055)
+            wm_sz = int(min(w, h) * 0.52)
+            scaled_wm = self._watermark_pix.scaled(
+                wm_sz, wm_sz,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            painter.drawPixmap(int(w * 0.50 - wm_sz / 2), int(h * 0.50 - wm_sz / 2), scaled_wm)
+            painter.restore()
+
+
+class FrostedPillLabel(QLabel):
+    """Üst ve alt bardaki rozetler için QPainter Antialiasing ile pürüzsüz oval köşeli buzlu cam etiket."""
+    def __init__(
+        self,
+        text="",
+        bg_color=QColor(255, 255, 255, 16),
+        border_color=QColor(255, 255, 255, 42),
+        text_color=QColor(241, 245, 249),
+        radius=11.0,
+        pad_x=14,
+        pad_y=6,
+        parent=None
+    ):
+        super().__init__(text, parent)
+        self.bg_color = bg_color
+        self.border_color = border_color
+        self.text_color = text_color
+        self.radius = radius
+        self.setContentsMargins(pad_x, pad_y, pad_x, pad_y)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet(f"color: {self.text_color.name()}; background: transparent; border: none;")
+
+    def set_pill_colors(self, bg_color: QColor, border_color: QColor, text_color: QColor):
+        self.bg_color = bg_color
+        self.border_color = border_color
+        self.text_color = text_color
+        self.setStyleSheet(f"color: {self.text_color.name()}; background: transparent; border: none;")
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(1.0, 1.0, self.width() - 2.0, self.height() - 2.0)
+        r = min(self.radius, rect.height() / 2.0)
+        path = QPainterPath()
+        path.addRoundedRect(rect, r, r)
+        painter.fillPath(path, self.bg_color)
+        painter.setPen(QPen(self.border_color, 1.25))
+        painter.drawPath(path)
+        super().paintEvent(event)
+
+
+class FrostedPillFrame(QFrame):
+    """İçinde ikon ve metin barındıran rozet kutuları için pürüzsüz anti-aliased buzlu cam çerçeve."""
+    def __init__(
+        self,
+        bg_color=QColor(255, 255, 255, 16),
+        border_color=QColor(255, 255, 255, 42),
+        radius=11.0,
+        parent=None
+    ):
+        super().__init__(parent)
+        self.bg_color = bg_color
+        self.border_color = border_color
+        self.radius = radius
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(1.0, 1.0, self.width() - 2.0, self.height() - 2.0)
+        r = min(self.radius, rect.height() / 2.0)
+        path = QPainterPath()
+        path.addRoundedRect(rect, r, r)
+        painter.fillPath(path, self.bg_color)
+        painter.setPen(QPen(self.border_color, 1.25))
+        painter.drawPath(path)
+
+
+class FrostedGlassCard(QFrame):
+    """Pürüzsüz (Anti-aliased) oval köşeli gerçek Buzlu Cam (Glassmorphism) kart bileşeni."""
+    def __init__(self, accent_color=QColor(56, 189, 248, 95), radius=26.0, parent=None):
+        super().__init__(parent)
+        self.accent_color = accent_color
+        self.radius = radius
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        rect = QRectF(1.5, 1.5, self.width() - 3.0, self.height() - 3.0)
+        path = QPainterPath()
+        path.addRoundedRect(rect, self.radius, self.radius)
+
+        # Buzlu Cam Yarı Saydam İç Dolgu
+        fill_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        fill_grad.setColorAt(0.0, QColor(255, 255, 255, 24))
+        fill_grad.setColorAt(0.35, QColor(20, 38, 68, 145))
+        fill_grad.setColorAt(1.0, QColor(9, 20, 38, 175))
+        painter.fillPath(path, fill_grad)
+
+        # Üst Cam Yansıma Şeridi (Specular Highlight)
+        top_shine_rect = QRectF(rect.left() + 18, rect.top() + 1.0, rect.width() - 36, 1.2)
+        shine_grad = QLinearGradient(top_shine_rect.topLeft(), top_shine_rect.topRight())
+        shine_grad.setColorAt(0.0, QColor(255, 255, 255, 0))
+        shine_grad.setColorAt(0.5, QColor(255, 255, 255, 95))
+        shine_grad.setColorAt(1.0, QColor(255, 255, 255, 0))
+        painter.fillRect(top_shine_rect, shine_grad)
+
+        # Pürüzsüz Vektörel Cam Kenarlık (Sıfır piksel kırılması)
+        border_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        border_grad.setColorAt(0.0, QColor(255, 255, 255, 68))
+        border_grad.setColorAt(0.5, self.accent_color)
+        border_grad.setColorAt(1.0, QColor(255, 255, 255, 25))
+        painter.setPen(QPen(QBrush(border_grad), 1.5))
+        painter.drawPath(path)
+
+
+class SmoothQrFrame(QFrame):
+    """QR Kod için pürüzsüz anti-aliased yuvarlak köşeli beyaz kart."""
+    def __init__(self, radius=22.0, parent=None):
+        super().__init__(parent)
+        self.radius = radius
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(2.0, 2.0, self.width() - 4.0, self.height() - 4.0)
+        path = QPainterPath()
+        path.addRoundedRect(rect, self.radius, self.radius)
+        painter.fillPath(path, QColor(255, 255, 255, 252))
+        painter.setPen(QPen(QColor(56, 189, 248, 150), 2.0))
+        painter.drawPath(path)
+
+
+class FrostedPinCapsule(QLabel):
+    """PIN noktalarını veya uyarı mesajını pürüzsüz buzlu cam kapsül içinde vektörel çizer."""
+    def __init__(self, text="○ ○ ○ ○", parent=None):
+        super().__init__(text, parent)
+        self.mode = "normal"
+        self.pin_length = 0
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+    def set_mode_and_length(self, mode: str, pin_length: int):
+        self.mode = mode
+        self.pin_length = pin_length
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        rect = QRectF(1.5, 1.5, self.width() - 3.0, self.height() - 3.0)
+        radius = rect.height() / 2.0
+        path = QPainterPath()
+        path.addRoundedRect(rect, radius, radius)
+
+        if self.mode == "error":
+            painter.fillPath(path, QColor(127, 29, 29, 110))
+            painter.setPen(QPen(QColor(248, 113, 113, 190), 1.6))
+        elif self.mode == "active":
+            painter.fillPath(path, QColor(8, 18, 36, 155))
+            painter.setPen(QPen(QColor(56, 189, 248, 160), 1.5))
+        else:
+            painter.fillPath(path, QColor(8, 18, 36, 130))
+            painter.setPen(QPen(QColor(255, 255, 255, 45), 1.3))
+        painter.drawPath(path)
+
+        txt = self.text()
+        if "○" in txt or "●" in txt:
+            total_dots = max(4, self.pin_length)
+            spacing = 26.0
+            total_w = (total_dots - 1) * spacing
+            start_x = self.width() / 2.0 - total_w / 2.0
+            cy = self.height() / 2.0
+
+            for i in range(total_dots):
+                cx = start_x + i * spacing
+                if i < self.pin_length:
+                    # Yanan parlak mavi/mercan nokta
+                    glow = QRadialGradient(QPointF(cx, cy), 10.0)
+                    glow.setColorAt(0.0, QColor(56, 189, 248, 255))
+                    glow.setColorAt(0.65, QColor(56, 189, 248, 190))
+                    glow.setColorAt(1.0, QColor(56, 189, 248, 0))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(glow)
+                    painter.drawEllipse(QPointF(cx, cy), 10.0, 10.0)
+
+                    painter.setBrush(QColor(240, 249, 255))
+                    painter.drawEllipse(QPointF(cx, cy), 5.2, 5.2)
+                else:
+                    # Boş buzlu cam halka
+                    painter.setBrush(QColor(255, 255, 255, 15))
+                    painter.setPen(QPen(QColor(148, 163, 184, 110), 1.5))
+                    painter.drawEllipse(QPointF(cx, cy), 5.2, 5.2)
+        else:
+            painter.setPen(QColor(252, 165, 165) if self.mode == "error" else QColor(248, 250, 252))
+            painter.setFont(QFont("DejaVu Sans", 14, QFont.Weight.ExtraBold))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, txt)
+
+
+class FrostedGlassButton(QPushButton):
+    """Gerçek Buzlu Cam (Frosted Glass) dokunmatik tuş bileşeni — düz, zarif ve sıfır piksel kırılmalı."""
+    def __init__(self, text: str, variant: str = "number", font_pt: int = 19, parent=None):
+        super().__init__(text, parent)
+        self.variant = variant  # "number", "clear", "unlock"
+        self.font_pt = font_pt
+        self.hovered = False
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def enterEvent(self, event):
+        self.hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        rect = QRectF(1.2, 1.2, self.width() - 2.4, self.height() - 2.4)
+        radius = 15.0
+        path = QPainterPath()
+        path.addRoundedRect(rect, radius, radius)
+
+        pressed = self.isDown()
+
+        # Buzlu Cam Dolgu & İnce Cam Kenarlık
+        fill_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        if self.variant == "unlock":
+            if pressed:
+                fill_grad.setColorAt(0.0, QColor(16, 185, 129, 130))
+                fill_grad.setColorAt(1.0, QColor(5, 150, 105, 150))
+            elif self.hovered:
+                fill_grad.setColorAt(0.0, QColor(52, 211, 153, 85))
+                fill_grad.setColorAt(1.0, QColor(16, 185, 129, 55))
+            else:
+                fill_grad.setColorAt(0.0, QColor(52, 211, 153, 52))
+                fill_grad.setColorAt(1.0, QColor(16, 185, 129, 28))
+            border_color = QColor(110, 231, 183, 130 if self.hovered else 95)
+            text_color = QColor(236, 253, 245)
+        elif self.variant == "clear":
+            if pressed:
+                fill_grad.setColorAt(0.0, QColor(244, 63, 94, 130))
+                fill_grad.setColorAt(1.0, QColor(225, 29, 72, 150))
+            elif self.hovered:
+                fill_grad.setColorAt(0.0, QColor(251, 113, 133, 80))
+                fill_grad.setColorAt(1.0, QColor(244, 63, 94, 50))
+            else:
+                fill_grad.setColorAt(0.0, QColor(255, 94, 77, 48))
+                fill_grad.setColorAt(1.0, QColor(225, 29, 72, 26))
+            border_color = QColor(253, 164, 175, 125 if self.hovered else 88)
+            text_color = QColor(255, 241, 242)
+        else:
+            if pressed:
+                fill_grad.setColorAt(0.0, QColor(56, 189, 248, 110))
+                fill_grad.setColorAt(1.0, QColor(14, 165, 233, 80))
+                border_color = QColor(125, 211, 252, 180)
+            elif self.hovered:
+                fill_grad.setColorAt(0.0, QColor(255, 255, 255, 42))
+                fill_grad.setColorAt(1.0, QColor(56, 189, 248, 24))
+                border_color = QColor(125, 211, 252, 120)
+            else:
+                fill_grad.setColorAt(0.0, QColor(255, 255, 255, 24))
+                fill_grad.setColorAt(1.0, QColor(255, 255, 255, 9))
+                border_color = QColor(255, 255, 255, 52)
+            text_color = QColor(248, 250, 252)
+
+        painter.fillPath(path, fill_grad)
+
+        # Üst İnce Cam Parıltısı
+        shine = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        shine.setColorAt(0.0, border_color)
+        shine.setColorAt(1.0, QColor(border_color.red(), border_color.green(), border_color.blue(), 22))
+        painter.setPen(QPen(QBrush(shine), 1.25))
+        painter.drawPath(path)
+
+        # Metin Çizimi
+        painter.setPen(text_color)
+        weight = QFont.Weight.Bold if self.variant != "number" else QFont.Weight.DemiBold
+        painter.setFont(QFont("DejaVu Sans", self.font_pt, weight))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
+
+
+# -------------------------------------------------------------
 # 🔒 Ana Kilit Ekranı Penceresi (TAHTA KİLİT v1.1 Modern Kiosk)
 # -------------------------------------------------------------
 class LockScreenWindow(QMainWindow):
@@ -1231,27 +1624,15 @@ class LockScreenWindow(QMainWindow):
         body_spacing = 22 if compact else 40
         qr_box_size = 185 if compact else 225
         clock_pt = 34 if compact else 44
-        numpad_w = 88 if compact else 102
-        numpad_h = 50 if compact else 60
-        numpad_spacing = 10 if compact else 13
-        logo_w = 240 if compact else 285
-        logo_h = 78 if compact else 94
+        numpad_w = 90 if compact else 104
+        numpad_h = 50 if compact else 58
+        numpad_spacing = 10 if compact else 12
+        logo_w = 245 if compact else 285
+        logo_h = 85 if compact else 100
 
-        # Ana Düzen — Tahta Kilit & Mercan Robotik Derin Siber Lacivert Gradyan Arka Plan
-        main_widget = QWidget()
+        # Ana Düzen — Ambiyans Işık Küreleri (Aurora) ve Geometrik Teknoloji Desenli Arka Plan
+        main_widget = AmbientBackgroundWidget()
         main_widget.setObjectName("MainRoot")
-        main_widget.setStyleSheet("""
-            QWidget#MainRoot {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #050c18,
-                    stop:0.45 #0a182e,
-                    stop:0.8 #0d1f3a,
-                    stop:1 #060f1e
-                );
-                color: #f8fafc;
-            }
-        """)
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -1270,8 +1651,8 @@ class LockScreenWindow(QMainWindow):
         top_bar.setFixedHeight(top_bar_h)
         top_bar.setStyleSheet("""
             QFrame {
-                background: rgba(9, 20, 38, 0.94);
-                border-bottom: 2px solid rgba(56, 189, 248, 0.30);
+                background: rgba(8, 17, 34, 0.72);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.14);
             }
         """)
         top_layout = QHBoxLayout(top_bar)
@@ -1296,9 +1677,9 @@ class LockScreenWindow(QMainWindow):
         brand_col = QVBoxLayout()
         brand_col.setSpacing(0)
         brand_col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        lbl_brand_title = QLabel("TAHTA <span style='color:#ff5e4d;'>KİLİT</span>")
+        lbl_brand_title = QLabel("TAHTA <span style='color:#ff5643;'>KİLİT</span>")
         lbl_brand_title.setFont(QFont("DejaVu Sans", 13 if compact else 15, QFont.Weight.ExtraBold))
-        lbl_brand_title.setStyleSheet("color: #38bdf8; letter-spacing: 0.8px; border: none; background: transparent;")
+        lbl_brand_title.setStyleSheet("color: #f8fafc; letter-spacing: 0.8px; border: none; background: transparent;")
         lbl_brand_sub = QLabel("ETKİLEŞİMLİ TAHTA KİLİT")
         lbl_brand_sub.setFont(QFont("DejaVu Sans", 7 if compact else 8, QFont.Weight.Bold))
         lbl_brand_sub.setStyleSheet("color: #94a3b8; letter-spacing: 0.5px; border: none; background: transparent;")
@@ -1306,78 +1687,70 @@ class LockScreenWindow(QMainWindow):
         brand_col.addWidget(lbl_brand_sub)
         top_layout.addLayout(brand_col)
 
-        # Sınıf Rozeti
-        self.lbl_class = QLabel(f"🖥️ {self.sinif_adi}")
+        # Sınıf Rozeti (Vektörel Anti-Aliased Buzlu Cam Kapsül)
+        self.lbl_class = FrostedPillLabel(
+            f"🖥️ {self.sinif_adi}",
+            bg_color=QColor(56, 189, 248, 42),
+            border_color=QColor(125, 211, 252, 120),
+            text_color=QColor(255, 255, 255),
+            radius=11.0,
+            pad_x=14,
+            pad_y=6
+        )
         self.lbl_class.setFont(QFont("DejaVu Sans", 13 if compact else 15, QFont.Weight.ExtraBold))
-        self.lbl_class.setStyleSheet("""
-            color: #ffffff;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #0369a1);
-            padding: 6px 14px;
-            border-radius: 10px;
-            border: 1.5px solid #38bdf8;
-        """)
         top_layout.addWidget(self.lbl_class)
 
         # Orta: Kurumsal Okul Adı Rozeti (Esnek genişlik — ekranı asla taşırmaz!)
-        self.lbl_school = QLabel(f"🏫 {self.okul_adi}")
+        self.lbl_school = FrostedPillLabel(
+            f"🏫 {self.okul_adi}",
+            bg_color=QColor(255, 255, 255, 16),
+            border_color=QColor(255, 255, 255, 42),
+            text_color=QColor(241, 245, 249),
+            radius=11.0,
+            pad_x=12,
+            pad_y=6
+        )
         self.lbl_school.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.Bold))
         self.lbl_school.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_school.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.lbl_school.setMinimumWidth(140)
-        self.lbl_school.setStyleSheet("""
-            color: #f1f5f9;
-            background: rgba(15, 34, 64, 0.85);
-            padding: 6px 10px;
-            border-radius: 10px;
-            border: 1px solid rgba(56, 189, 248, 0.32);
-        """)
         top_layout.addWidget(self.lbl_school, 1)
 
         # Sağ: Cihaz ID, Bağlantı Durumu ve Ayarlar Butonu
-        lbl_dev = QLabel(f"🆔 {self.cihaz_id}")
+        lbl_dev = FrostedPillLabel(
+            f"🆔 {self.cihaz_id}",
+            bg_color=QColor(255, 255, 255, 14),
+            border_color=QColor(255, 255, 255, 36),
+            text_color=QColor(203, 213, 225),
+            radius=10.0,
+            pad_x=10,
+            pad_y=5
+        )
         lbl_dev.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.Bold))
-        lbl_dev.setStyleSheet("""
-            color: #94a3b8;
-            background: rgba(255, 255, 255, 0.05);
-            padding: 5px 10px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.10);
-        """)
         top_layout.addWidget(lbl_dev)
 
-        self.lbl_status = QLabel("● Çevrimdışı (PIN)")
+        self.lbl_status = FrostedPillLabel(
+            "● Çevrimdışı (PIN)",
+            bg_color=QColor(239, 68, 68, 42),
+            border_color=QColor(248, 113, 113, 115),
+            text_color=QColor(252, 165, 165),
+            radius=14.0,
+            pad_x=12,
+            pad_y=6
+        )
         self.lbl_status.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.Bold))
-        self.lbl_status.setStyleSheet("""
-            color: #fca5a5;
-            background: rgba(239, 68, 68, 0.18);
-            padding: 6px 12px;
-            border-radius: 999px;
-            border: 1px solid rgba(239, 68, 68, 0.45);
-        """)
         top_layout.addWidget(self.lbl_status)
 
-        btn_settings = QPushButton("⚙️")
+        btn_settings = FrostedGlassButton("⚙️", variant="number", font_pt=13 if compact else 14)
         btn_settings.setFixedSize(38 if compact else 42, 38 if compact else 42)
-        btn_settings.setFont(QFont("Segoe UI Emoji", 13 if compact else 14))
-        btn_settings.setStyleSheet("""
-            QPushButton {
-                background: #152c4e;
-                color: #38bdf8;
-                border-radius: 10px;
-                border: 1.5px solid #38bdf8;
-            }
-            QPushButton:hover { background: #1e3a66; }
-            QPushButton:pressed { background: #38bdf8; color: #091426; }
-        """)
         btn_settings.clicked.connect(self.open_settings)
         top_layout.addWidget(btn_settings)
 
         main_layout.addWidget(top_bar)
 
         # -------------------------------------------------------------
-        # 3. Orta Gövde: İki Modern Kristal Netliğinde Kart (Vektörel Çizim)
-        # Not: QGraphicsDropShadowEffect kapsayıcı kartlarda kullanılmaz,
-        # böylece tüm butonlar ve yazılar %100 vektörel keskinlikte çizilir!
+        # 3. Orta Gövde: İki Pürüzsüz Vektörel Buzlu Cam Kart (FrostedGlassCard)
+        # Oval köşeler QPainter Antialiasing ile çizildiği için piksel kırılması %0'dır!
         # -------------------------------------------------------------
         body = QWidget()
         body.setStyleSheet("background: transparent;")
@@ -1385,20 +1758,8 @@ class LockScreenWindow(QMainWindow):
         body_layout.setContentsMargins(body_margin_x, body_margin_y, body_margin_x, body_margin_y)
         body_layout.setSpacing(body_spacing)
 
-        # === SOL KART (Dijital Saat, Tarih, Logolu QR Kod & Canlı Geri Sayım Çubuğu) ===
-        left_card = QFrame()
-        left_card.setObjectName("LeftGlassCard")
-        left_card.setStyleSheet("""
-            QFrame#LeftGlassCard {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #0f2342,
-                    stop:1 #091528
-                );
-                border: 2px solid rgba(56, 189, 248, 0.42);
-                border-radius: 24px;
-            }
-        """)
+        # === SOL BUZLU CAM KART (Dijital Saat, Tarih, Logolu QR Kod & Canlı Geri Sayım Çubuğu) ===
+        left_card = FrostedGlassCard(accent_color=QColor(56, 189, 248, 95), radius=26.0)
 
         left_box = QVBoxLayout(left_card)
         left_box.setContentsMargins(24, 16 if compact else 24, 24, 16 if compact else 24)
@@ -1414,21 +1775,14 @@ class LockScreenWindow(QMainWindow):
         # Tarih
         self.lbl_date = QLabel("8 Kasım 2026, Pazar")
         self.lbl_date.setFont(QFont("DejaVu Sans", 12 if compact else 14, QFont.Weight.Bold))
-        self.lbl_date.setStyleSheet("color: #38bdf8; margin-bottom: 4px; border: none; background: transparent;")
+        self.lbl_date.setStyleSheet("color: #7dd3fc; margin-bottom: 4px; border: none; background: transparent;")
         left_box.addWidget(self.lbl_date, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # QR Kod Çerçevesi
-        qr_frame = QFrame()
-        qr_frame.setStyleSheet("""
-            QFrame {
-                background: #ffffff;
-                border: 3px solid #38bdf8;
-                border-radius: 20px;
-                padding: 8px;
-            }
-        """)
+        # QR Kod Pürüzsüz Çerçevesi (SmoothQrFrame)
+        qr_frame = SmoothQrFrame(radius=22.0)
+        qr_frame.setFixedSize(qr_box_size + 22, qr_box_size + 22)
         qr_layout = QVBoxLayout(qr_frame)
-        qr_layout.setContentsMargins(4, 4, 4, 4)
+        qr_layout.setContentsMargins(11, 11, 11, 11)
         self.qr_display_size = qr_box_size
         self.lbl_qr = QLabel()
         self.lbl_qr.setFixedSize(qr_box_size, qr_box_size)
@@ -1442,15 +1796,15 @@ class LockScreenWindow(QMainWindow):
         self.qr_progress.setRange(0, 30)
         self.qr_progress.setValue(30)
         self.qr_progress.setTextVisible(False)
-        self.qr_progress.setFixedSize(qr_box_size + 24, 8)
+        self.qr_progress.setFixedSize(qr_box_size + 22, 7)
         self.qr_progress.setStyleSheet("""
             QProgressBar {
-                background-color: #060f1e;
-                border: 1px solid rgba(56, 189, 248, 0.35);
-                border-radius: 4px;
+                background-color: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 3px;
             }
             QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #38bdf8, stop:1 #ff5e4d);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #38bdf8, stop:1 #ff5643);
                 border-radius: 3px;
             }
         """)
@@ -1458,43 +1812,32 @@ class LockScreenWindow(QMainWindow):
 
         self.lbl_qr_timer = QLabel("🔄 Güvenlik QR kodu 30 sn içinde yenilenecek")
         self.lbl_qr_timer.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.DemiBold))
-        self.lbl_qr_timer.setStyleSheet("color: #94a3b8; border: none; background: transparent;")
+        self.lbl_qr_timer.setStyleSheet("color: #cbd5e1; border: none; background: transparent;")
         left_box.addWidget(self.lbl_qr_timer, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        qr_hint = QLabel("📱 Tahta Kilit Mobil Uygulaması ile Okutun")
+        qr_hint = FrostedPillLabel(
+            "📱 Tahta Kilit Mobil Uygulaması ile Okutun",
+            bg_color=QColor(56, 189, 248, 36),
+            border_color=QColor(125, 211, 252, 95),
+            text_color=QColor(224, 242, 254),
+            radius=13.0,
+            pad_x=16,
+            pad_y=5
+        )
         qr_hint.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.Bold))
-        qr_hint.setStyleSheet("""
-            color: #38bdf8;
-            background: rgba(56, 189, 248, 0.14);
-            padding: 5px 16px;
-            border-radius: 999px;
-            border: 1px solid rgba(56, 189, 248, 0.35);
-        """)
         left_box.addWidget(qr_hint, alignment=Qt.AlignmentFlag.AlignCenter)
 
         body_layout.addWidget(left_card, 1)
 
-        # === SAĞ KART (Tahta Kilit Logo Banner + Işıklı PIN Ekranı + HD 3D Dokunmatik Numpad) ===
-        right_card = QFrame()
-        right_card.setObjectName("RightGlassCard")
-        right_card.setStyleSheet("""
-            QFrame#RightGlassCard {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #0f2342,
-                    stop:1 #091528
-                );
-                border: 2px solid rgba(255, 94, 77, 0.45);
-                border-radius: 24px;
-            }
-        """)
+        # === SAĞ BUZLU CAM KART (Yeni Tahta Kilit Logosu + Vektörel PIN Kapsülü + Buzlu Cam Tuş Takımı) ===
+        right_card = FrostedGlassCard(accent_color=QColor(255, 94, 77, 90), radius=26.0)
 
         right_box = QVBoxLayout(right_card)
         right_box.setContentsMargins(24, 14 if compact else 20, 24, 14 if compact else 20)
-        right_box.setSpacing(8 if compact else 10)
+        right_box.setSpacing(8 if compact else 11)
         right_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Tahta Kilit Tipografi Logosu (SmoothTransformation ile cam gibi net!)
+        # Yeni Şeffaf Tahta Kilit Tipografi Logosu
         logo_banner_path = get_asset_path("tahta_kilit_logo.png")
         if os.path.exists(logo_banner_path):
             lbl_tk_logo = QLabel()
@@ -1515,21 +1858,20 @@ class LockScreenWindow(QMainWindow):
             pin_title.setStyleSheet("color: #f1f5f9; border: none; background: transparent;")
             right_box.addWidget(pin_title, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        pin_desc = QLabel("Dokunmatik tuş takımından öğretmen PIN kodunu giriniz:")
+        pin_desc = QLabel("Dokunmatik buzlu cam tuş takımından PIN kodunu giriniz:")
         pin_desc.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.DemiBold))
         pin_desc.setStyleSheet("color: #cbd5e1; border: none; background: transparent;")
         right_box.addWidget(pin_desc, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # PIN Gösterge Ekranı (Işıklı Kapsül)
+        # Pürüzsüz Buzlu Cam PIN Kapsülü (FrostedPinCapsule)
         pin_w = numpad_w * 3 + numpad_spacing * 2
-        self.pin_display = QLabel("○ ○ ○ ○")
+        self.pin_display = FrostedPinCapsule("○ ○ ○ ○")
         self.pin_display.setFixedSize(pin_w, 46 if compact else 52)
-        self.pin_display.setFont(QFont("DejaVu Sans", 19 if compact else 22, QFont.Weight.ExtraBold))
         self.pin_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._set_pin_display_style("normal")
         right_box.addWidget(self.pin_display, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Kristal Netliğinde 3D Dokunmatik Numpad Izgarası
+        # Gerçek Buzlu Cam (Frosted Glass) Dokunmatik Numpad Izgarası
         numpad_grid = QGridLayout()
         numpad_grid.setSpacing(numpad_spacing)
 
@@ -1541,78 +1883,17 @@ class LockScreenWindow(QMainWindow):
         ]
 
         for text, row, col in buttons:
-            btn = QPushButton(text)
-            btn.setFixedSize(numpad_w, numpad_h)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             if text == "AÇ ✓":
-                btn.setFont(QFont("DejaVu Sans", 13 if compact else 15, QFont.Weight.ExtraBold))
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #34d399, stop:0.5 #10b981, stop:1 #059669);
-                        color: #ffffff;
-                        border-radius: 14px;
-                        border: 2px solid #6ee7b7;
-                        border-bottom: 4px solid #064e3b;
-                    }
-                    QPushButton:hover {
-                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6ee7b7, stop:1 #10b981);
-                    }
-                    QPushButton:pressed {
-                        background: #047857;
-                        border-bottom: 2px solid #064e3b;
-                    }
-                """)
+                btn = FrostedGlassButton(text, variant="unlock", font_pt=12 if compact else 14)
                 btn.clicked.connect(self.verify_pin)
             elif text == "SİL":
-                btn.setFont(QFont("DejaVu Sans", 13 if compact else 15, QFont.Weight.ExtraBold))
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ff6b5b, stop:0.5 #ef4444, stop:1 #dc2626);
-                        color: #ffffff;
-                        border-radius: 14px;
-                        border: 2px solid #fca5a5;
-                        border-bottom: 4px solid #7f1d1d;
-                    }
-                    QPushButton:hover {
-                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fca5a5, stop:1 #ef4444);
-                    }
-                    QPushButton:pressed {
-                        background: #b91c1c;
-                        border-bottom: 2px solid #7f1d1d;
-                    }
-                """)
+                btn = FrostedGlassButton(text, variant="clear", font_pt=12 if compact else 14)
                 btn.clicked.connect(self.clear_pin)
             else:
-                btn.setFont(QFont("DejaVu Sans", 18 if compact else 21, QFont.Weight.ExtraBold))
-                btn.setStyleSheet("""
-                    QPushButton {
-                        background: qlineargradient(
-                            x1:0, y1:0, x2:0, y2:1,
-                            stop:0 #1e3a6d,
-                            stop:0.5 #152b52,
-                            stop:1 #0d1c36
-                        );
-                        color: #ffffff;
-                        border-radius: 14px;
-                        border: 2px solid #38bdf8;
-                        border-bottom: 4px solid #0284c7;
-                    }
-                    QPushButton:hover {
-                        background: qlineargradient(
-                            x1:0, y1:0, x2:0, y2:1,
-                            stop:0 #254a8a,
-                            stop:1 #17325e
-                        );
-                        border-color: #7dd3fc;
-                    }
-                    QPushButton:pressed {
-                        background: #38bdf8;
-                        color: #050c18;
-                        border-color: #ffffff;
-                    }
-                """)
+                btn = FrostedGlassButton(text, variant="number", font_pt=17 if compact else 20)
                 btn.clicked.connect(lambda _, t=text: self.append_pin(t))
 
+            btn.setFixedSize(numpad_w, numpad_h)
             numpad_grid.addWidget(btn, row, col)
 
         right_box.addLayout(numpad_grid)
@@ -1627,8 +1908,8 @@ class LockScreenWindow(QMainWindow):
         footer_bar.setFixedHeight(footer_h)
         footer_bar.setStyleSheet("""
             QFrame {
-                background: rgba(7, 15, 30, 0.96);
-                border-top: 2px solid rgba(56, 189, 248, 0.25);
+                background: rgba(7, 15, 30, 0.78);
+                border-top: 1px solid rgba(255, 255, 255, 0.14);
             }
         """)
         footer_layout = QHBoxLayout(footer_bar)
@@ -1640,20 +1921,17 @@ class LockScreenWindow(QMainWindow):
         self.lbl_quote.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.DemiBold))
         self.lbl_quote.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.lbl_quote.setMinimumWidth(120)
-        self.lbl_quote.setStyleSheet("color: #94a3b8; border: none; background: transparent;")
+        self.lbl_quote.setStyleSheet("color: #cbd5e1; border: none; background: transparent;")
         footer_layout.addWidget(self.lbl_quote, 1)
 
-        # Orta-Sağ: Geliştirici MERCAN ROBOTİK Amblemi & Kimliği
-        dev_badge = QFrame()
-        dev_badge.setStyleSheet("""
-            QFrame {
-                background: #0f2240;
-                border: 1.5px solid rgba(56, 189, 248, 0.45);
-                border-radius: 10px;
-            }
-        """)
+        # Orta-Sağ: Geliştirici MERCAN ROBOTİK Amblemi & Kimliği (Vektörel Anti-Aliased Çerçeve)
+        dev_badge = FrostedPillFrame(
+            bg_color=QColor(255, 255, 255, 16),
+            border_color=QColor(255, 255, 255, 42),
+            radius=11.0
+        )
         dev_layout = QHBoxLayout(dev_badge)
-        dev_layout.setContentsMargins(8, 3, 12, 3)
+        dev_layout.setContentsMargins(10, 4, 14, 4)
         dev_layout.setSpacing(7)
 
         mr_icon_path = get_asset_path("mercan_robotik_icon.png")
@@ -1671,33 +1949,35 @@ class LockScreenWindow(QMainWindow):
             )
             dev_layout.addWidget(lbl_mr_icon)
 
-        lbl_dev_brand = QLabel("Geliştirici: <b style='color:#38bdf8;'>MERCAN</b> <b style='color:#ff5e4d;'>ROBOTİK</b>")
+        lbl_dev_brand = QLabel("Geliştirici: <b style='color:#38bdf8;'>MERCAN</b> <b style='color:#ff5643;'>ROBOTİK</b>")
         lbl_dev_brand.setFont(QFont("DejaVu Sans", 9 if compact else 10))
         lbl_dev_brand.setStyleSheet("color: #e2e8f0; border: none; background: transparent;")
         dev_layout.addWidget(lbl_dev_brand)
         footer_layout.addWidget(dev_badge)
 
-        # Sağ: 🛡️ ET Güvenliği Aktif ve v1.1 Sürüm Rozeti
-        self.lbl_et_security = QLabel("🛡️ ET Güvenliği Aktif")
+        # Sağ: 🛡️ ET Güvenliği Aktif ve v1.1 Sürüm Rozeti (Vektörel Anti-Aliased)
+        self.lbl_et_security = FrostedPillLabel(
+            "🛡️ ET Güvenliği Aktif",
+            bg_color=QColor(16, 185, 129, 40),
+            border_color=QColor(110, 231, 183, 105),
+            text_color=QColor(110, 231, 183),
+            radius=10.0,
+            pad_x=12,
+            pad_y=5
+        )
         self.lbl_et_security.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.ExtraBold))
-        self.lbl_et_security.setStyleSheet("""
-            color: #34d399;
-            background: rgba(16, 185, 129, 0.16);
-            padding: 5px 12px;
-            border-radius: 9px;
-            border: 1.5px solid rgba(52, 211, 153, 0.45);
-        """)
         footer_layout.addWidget(self.lbl_et_security)
 
-        lbl_version = QLabel(APP_VERSION)
+        lbl_version = FrostedPillLabel(
+            APP_VERSION,
+            bg_color=QColor(56, 189, 248, 38),
+            border_color=QColor(125, 211, 252, 105),
+            text_color=QColor(125, 211, 252),
+            radius=10.0,
+            pad_x=10,
+            pad_y=5
+        )
         lbl_version.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.ExtraBold))
-        lbl_version.setStyleSheet("""
-            color: #38bdf8;
-            background: rgba(56, 189, 248, 0.16);
-            padding: 5px 10px;
-            border-radius: 9px;
-            border: 1.5px solid rgba(56, 189, 248, 0.45);
-        """)
         footer_layout.addWidget(lbl_version)
 
         main_layout.addWidget(footer_bar)
@@ -1723,30 +2003,8 @@ class LockScreenWindow(QMainWindow):
         self.admin_exit_overlay.hide()
 
     def _set_pin_display_style(self, mode: str = "normal"):
-        if mode == "error":
-            self.pin_display.setStyleSheet("""
-                background: rgba(127, 29, 29, 0.45);
-                border: 2px solid #ef4444;
-                border-radius: 14px;
-                color: #fca5a5;
-                letter-spacing: 6px;
-            """)
-        elif mode == "active":
-            self.pin_display.setStyleSheet("""
-                background: #060f1e;
-                border: 2px solid #38bdf8;
-                border-radius: 14px;
-                color: #38bdf8;
-                letter-spacing: 8px;
-            """)
-        else:
-            self.pin_display.setStyleSheet("""
-                background: #060f1e;
-                border: 2px solid #334155;
-                border-radius: 14px;
-                color: #64748b;
-                letter-spacing: 8px;
-            """)
+        if hasattr(self, "pin_display") and isinstance(self.pin_display, FrostedPinCapsule):
+            self.pin_display.set_mode_and_length(mode, len(self.entered_pin))
 
     # -------------------------------------------------------------
     # 🛡️ Kiosk Modu & Öğrenci Güvenlik Koruması (ET Güvenliği)
@@ -1993,22 +2251,20 @@ class LockScreenWindow(QMainWindow):
     def on_network_status_change(self, is_online: bool):
         if is_online:
             self.lbl_status.setText("● Çevrimiçi")
-            self.lbl_status.setStyleSheet("""
-                color: #34d399;
-                background: rgba(16, 185, 129, 0.15);
-                padding: 7px 15px;
-                border-radius: 999px;
-                border: 1px solid rgba(52, 211, 153, 0.35);
-            """)
+            if isinstance(self.lbl_status, FrostedPillLabel):
+                self.lbl_status.set_pill_colors(
+                    bg_color=QColor(16, 185, 129, 42),
+                    border_color=QColor(52, 211, 153, 115),
+                    text_color=QColor(110, 231, 183)
+                )
         else:
-            self.lbl_status.setText("● Çevrimdışı (PIN Modu)")
-            self.lbl_status.setStyleSheet("""
-                color: #f87171;
-                background: rgba(239, 68, 68, 0.15);
-                padding: 7px 15px;
-                border-radius: 999px;
-                border: 1px solid rgba(239, 68, 68, 0.35);
-            """)
+            self.lbl_status.setText("● Çevrimdışı (PIN)")
+            if isinstance(self.lbl_status, FrostedPillLabel):
+                self.lbl_status.set_pill_colors(
+                    bg_color=QColor(239, 68, 68, 42),
+                    border_color=QColor(248, 113, 113, 115),
+                    text_color=QColor(252, 165, 165)
+                )
 
     def on_server_command(self, data: dict):
         action = data.get("action")
