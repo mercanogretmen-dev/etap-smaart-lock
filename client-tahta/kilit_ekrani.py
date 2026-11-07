@@ -27,7 +27,7 @@ from PyQt6.QtGui import QFont, QPixmap, QImage, QKeyEvent, QColor, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QGridLayout, QLineEdit, QDialog, QInputDialog,
-    QMessageBox, QFrame, QGraphicsDropShadowEffect, QProgressBar
+    QMessageBox, QFrame, QGraphicsDropShadowEffect, QProgressBar, QSizePolicy
 )
 
 APP_NAME = "Tahta Kilit"
@@ -628,19 +628,14 @@ class SettingsOverlayWidget(QWidget):
         layout.setContentsMargins(20, 15, 20, 15)
 
         card = QFrame()
-        card.setFixedSize(760, 670)
+        card.setFixedSize(740, 625)
         card.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0b1930, stop:1 #0f2240);
-                border: 2px solid #38bdf8;
-                border-radius: 24px;
+                border: 2.5px solid #38bdf8;
+                border-radius: 22px;
             }
         """)
-        glow = QGraphicsDropShadowEffect(card)
-        glow.setBlurRadius(50)
-        glow.setColor(QColor(56, 189, 248, 190))
-        glow.setOffset(0, 4)
-        card.setGraphicsEffect(glow)
 
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(30, 20, 30, 20)
@@ -961,19 +956,14 @@ class AdminExitOverlayWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
 
         card = QFrame()
-        card.setFixedSize(560, 490)
+        card.setFixedSize(560, 480)
         card.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1e1b2e, stop:1 #0b1629);
-                border: 2px solid #ef4444;
-                border-radius: 24px;
+                border: 2.5px solid #ef4444;
+                border-radius: 22px;
             }
         """)
-        glow = QGraphicsDropShadowEffect(card)
-        glow.setBlurRadius(50)
-        glow.setColor(QColor(239, 68, 68, 180))
-        glow.setOffset(0, 4)
-        card.setGraphicsEffect(glow)
 
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(32, 24, 32, 24)
@@ -1227,6 +1217,26 @@ class LockScreenWindow(QMainWindow):
         )
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
+        # Ekran boyutuna göre duyarlı (responsive) ölçekleme:
+        # Hem 1280x720 / 1366x768 sanal makine ekranlarına hem de 1920x1080 akıllı tahtaya tam sığar!
+        screen = QApplication.primaryScreen()
+        sw = screen.geometry().width() if screen else 1920
+        sh = screen.geometry().height() if screen else 1080
+        compact = (sw < 1500 or sh < 860)
+
+        top_bar_h = 62 if compact else 74
+        footer_h = 48 if compact else 56
+        body_margin_x = 24 if compact else 50
+        body_margin_y = 14 if compact else 24
+        body_spacing = 22 if compact else 40
+        qr_box_size = 185 if compact else 225
+        clock_pt = 34 if compact else 44
+        numpad_w = 88 if compact else 102
+        numpad_h = 50 if compact else 60
+        numpad_spacing = 10 if compact else 13
+        logo_w = 240 if compact else 285
+        logo_h = 78 if compact else 94
+
         # Ana Düzen — Tahta Kilit & Mercan Robotik Derin Siber Lacivert Gradyan Arka Plan
         main_widget = QWidget()
         main_widget.setObjectName("MainRoot")
@@ -1257,103 +1267,106 @@ class LockScreenWindow(QMainWindow):
         # 2. Üst Kurumsal Bar: Tahta Kilit İkonu, Sınıf Adı, Okul Adı, Durum ve Ayarlar
         # -------------------------------------------------------------
         top_bar = QFrame()
-        top_bar.setFixedHeight(78)
+        top_bar.setFixedHeight(top_bar_h)
         top_bar.setStyleSheet("""
             QFrame {
-                background: rgba(9, 20, 38, 0.90);
-                border-bottom: 1.5px solid rgba(56, 189, 248, 0.25);
+                background: rgba(9, 20, 38, 0.94);
+                border-bottom: 2px solid rgba(56, 189, 248, 0.30);
             }
         """)
         top_layout = QHBoxLayout(top_bar)
-        top_layout.setContentsMargins(28, 0, 28, 0)
-        top_layout.setSpacing(14)
+        top_layout.setContentsMargins(18 if compact else 28, 0, 18 if compact else 28, 0)
+        top_layout.setSpacing(10 if compact else 14)
 
         # Sol: Tahta Kilit Amblemi + Marka Başlığı
+        icon_dim = 40 if compact else 46
         self.lbl_app_icon = QLabel()
-        self.lbl_app_icon.setFixedSize(48, 48)
-        self.lbl_app_icon.setScaledContents(True)
+        self.lbl_app_icon.setFixedSize(icon_dim, icon_dim)
         self.lbl_app_icon.setStyleSheet("border: none; background: transparent;")
         if os.path.exists(icon_path):
-            self.lbl_app_icon.setPixmap(QPixmap(icon_path))
+            self.lbl_app_icon.setPixmap(
+                QPixmap(icon_path).scaled(
+                    icon_dim, icon_dim,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            )
         top_layout.addWidget(self.lbl_app_icon)
 
         brand_col = QVBoxLayout()
         brand_col.setSpacing(0)
         brand_col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         lbl_brand_title = QLabel("TAHTA <span style='color:#ff5e4d;'>KİLİT</span>")
-        lbl_brand_title.setFont(QFont("Segoe UI", 15, QFont.Weight.ExtraBold))
-        lbl_brand_title.setStyleSheet("color: #38bdf8; letter-spacing: 1px; border: none; background: transparent;")
+        lbl_brand_title.setFont(QFont("DejaVu Sans", 13 if compact else 15, QFont.Weight.ExtraBold))
+        lbl_brand_title.setStyleSheet("color: #38bdf8; letter-spacing: 0.8px; border: none; background: transparent;")
         lbl_brand_sub = QLabel("ETKİLEŞİMLİ TAHTA KİLİT")
-        lbl_brand_sub.setFont(QFont("Segoe UI", 8, QFont.Weight.Bold))
-        lbl_brand_sub.setStyleSheet("color: #94a3b8; letter-spacing: 0.8px; border: none; background: transparent;")
+        lbl_brand_sub.setFont(QFont("DejaVu Sans", 7 if compact else 8, QFont.Weight.Bold))
+        lbl_brand_sub.setStyleSheet("color: #94a3b8; letter-spacing: 0.5px; border: none; background: transparent;")
         brand_col.addWidget(lbl_brand_title)
         brand_col.addWidget(lbl_brand_sub)
         top_layout.addLayout(brand_col)
 
         # Sınıf Rozeti
         self.lbl_class = QLabel(f"🖥️ {self.sinif_adi}")
-        self.lbl_class.setFont(QFont("Segoe UI", 15, QFont.Weight.ExtraBold))
+        self.lbl_class.setFont(QFont("DejaVu Sans", 13 if compact else 15, QFont.Weight.ExtraBold))
         self.lbl_class.setStyleSheet("""
             color: #ffffff;
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(2, 132, 199, 0.45), stop:1 rgba(56, 189, 248, 0.2));
-            padding: 7px 18px;
-            border-radius: 12px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #0369a1);
+            padding: 6px 14px;
+            border-radius: 10px;
             border: 1.5px solid #38bdf8;
         """)
         top_layout.addWidget(self.lbl_class)
 
-        top_layout.addStretch(1)
-
-        # Orta: Kurumsal Okul Adı Rozeti (Ayarlardan değiştirilebilir)
+        # Orta: Kurumsal Okul Adı Rozeti (Esnek genişlik — ekranı asla taşırmaz!)
         self.lbl_school = QLabel(f"🏫 {self.okul_adi}")
-        self.lbl_school.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.lbl_school.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.Bold))
         self.lbl_school.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_school.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.lbl_school.setMinimumWidth(140)
         self.lbl_school.setStyleSheet("""
-            color: #e2e8f0;
-            background: rgba(15, 34, 64, 0.75);
-            padding: 8px 22px;
-            border-radius: 12px;
-            border: 1px solid rgba(56, 189, 248, 0.28);
-            letter-spacing: 0.6px;
+            color: #f1f5f9;
+            background: rgba(15, 34, 64, 0.85);
+            padding: 6px 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(56, 189, 248, 0.32);
         """)
-        top_layout.addWidget(self.lbl_school)
-
-        top_layout.addStretch(1)
+        top_layout.addWidget(self.lbl_school, 1)
 
         # Sağ: Cihaz ID, Bağlantı Durumu ve Ayarlar Butonu
         lbl_dev = QLabel(f"🆔 {self.cihaz_id}")
-        lbl_dev.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        lbl_dev.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.Bold))
         lbl_dev.setStyleSheet("""
             color: #94a3b8;
-            background: rgba(255, 255, 255, 0.04);
-            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 5px 10px;
             border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.10);
         """)
         top_layout.addWidget(lbl_dev)
 
-        self.lbl_status = QLabel("● Çevrimdışı (PIN Modu)")
-        self.lbl_status.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self.lbl_status = QLabel("● Çevrimdışı (PIN)")
+        self.lbl_status.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.Bold))
         self.lbl_status.setStyleSheet("""
-            color: #f87171;
-            background: rgba(239, 68, 68, 0.14);
-            padding: 7px 15px;
+            color: #fca5a5;
+            background: rgba(239, 68, 68, 0.18);
+            padding: 6px 12px;
             border-radius: 999px;
-            border: 1px solid rgba(239, 68, 68, 0.35);
+            border: 1px solid rgba(239, 68, 68, 0.45);
         """)
         top_layout.addWidget(self.lbl_status)
 
         btn_settings = QPushButton("⚙️")
-        btn_settings.setFixedSize(44, 44)
-        btn_settings.setFont(QFont("Segoe UI Emoji", 15))
+        btn_settings.setFixedSize(38 if compact else 42, 38 if compact else 42)
+        btn_settings.setFont(QFont("Segoe UI Emoji", 13 if compact else 14))
         btn_settings.setStyleSheet("""
             QPushButton {
-                background: #132644;
+                background: #152c4e;
                 color: #38bdf8;
-                border-radius: 12px;
-                border: 1.5px solid rgba(56, 189, 248, 0.35);
+                border-radius: 10px;
+                border: 1.5px solid #38bdf8;
             }
-            QPushButton:hover { background: #1e3a66; border-color: #38bdf8; }
+            QPushButton:hover { background: #1e3a66; }
             QPushButton:pressed { background: #38bdf8; color: #091426; }
         """)
         btn_settings.clicked.connect(self.open_settings)
@@ -1362,49 +1375,46 @@ class LockScreenWindow(QMainWindow):
         main_layout.addWidget(top_bar)
 
         # -------------------------------------------------------------
-        # 3. Orta Gövde: İki Modern Buzlu Cam Kart (Glassmorphism)
+        # 3. Orta Gövde: İki Modern Kristal Netliğinde Kart (Vektörel Çizim)
+        # Not: QGraphicsDropShadowEffect kapsayıcı kartlarda kullanılmaz,
+        # böylece tüm butonlar ve yazılar %100 vektörel keskinlikte çizilir!
         # -------------------------------------------------------------
         body = QWidget()
         body.setStyleSheet("background: transparent;")
         body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(55, 26, 55, 26)
-        body_layout.setSpacing(44)
+        body_layout.setContentsMargins(body_margin_x, body_margin_y, body_margin_x, body_margin_y)
+        body_layout.setSpacing(body_spacing)
 
-        # === SOL CAM KART (Dijital Saat, Tarih, Logolu QR Kod & Canlı Geri Sayım Çubuğu) ===
+        # === SOL KART (Dijital Saat, Tarih, Logolu QR Kod & Canlı Geri Sayım Çubuğu) ===
         left_card = QFrame()
         left_card.setObjectName("LeftGlassCard")
         left_card.setStyleSheet("""
             QFrame#LeftGlassCard {
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(15, 33, 62, 0.86),
-                    stop:1 rgba(9, 20, 38, 0.92)
+                    stop:0 #0f2342,
+                    stop:1 #091528
                 );
-                border: 1.5px solid rgba(56, 189, 248, 0.32);
-                border-radius: 28px;
+                border: 2px solid rgba(56, 189, 248, 0.42);
+                border-radius: 24px;
             }
         """)
-        left_glow = QGraphicsDropShadowEffect(left_card)
-        left_glow.setBlurRadius(45)
-        left_glow.setColor(QColor(14, 165, 233, 75))
-        left_glow.setOffset(0, 8)
-        left_card.setGraphicsEffect(left_glow)
 
         left_box = QVBoxLayout(left_card)
-        left_box.setContentsMargins(36, 28, 36, 28)
-        left_box.setSpacing(10)
+        left_box.setContentsMargins(24, 16 if compact else 24, 24, 16 if compact else 24)
+        left_box.setSpacing(6 if compact else 10)
         left_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Dijital Saat
         self.lbl_clock = QLabel("10:00:00")
-        self.lbl_clock.setFont(QFont("Segoe UI", 48, QFont.Weight.ExtraBold))
+        self.lbl_clock.setFont(QFont("DejaVu Sans", clock_pt, QFont.Weight.ExtraBold))
         self.lbl_clock.setStyleSheet("color: #ffffff; letter-spacing: 2px; border: none; background: transparent;")
         left_box.addWidget(self.lbl_clock, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # Tarih
         self.lbl_date = QLabel("8 Kasım 2026, Pazar")
-        self.lbl_date.setFont(QFont("Segoe UI", 14, QFont.Weight.DemiBold))
-        self.lbl_date.setStyleSheet("color: #38bdf8; margin-bottom: 8px; border: none; background: transparent;")
+        self.lbl_date.setFont(QFont("DejaVu Sans", 12 if compact else 14, QFont.Weight.Bold))
+        self.lbl_date.setStyleSheet("color: #38bdf8; margin-bottom: 4px; border: none; background: transparent;")
         left_box.addWidget(self.lbl_date, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # QR Kod Çerçevesi
@@ -1412,16 +1422,17 @@ class LockScreenWindow(QMainWindow):
         qr_frame.setStyleSheet("""
             QFrame {
                 background: #ffffff;
-                border: 4px solid #38bdf8;
-                border-radius: 24px;
-                padding: 12px;
+                border: 3px solid #38bdf8;
+                border-radius: 20px;
+                padding: 8px;
             }
         """)
         qr_layout = QVBoxLayout(qr_frame)
-        qr_layout.setContentsMargins(6, 6, 6, 6)
+        qr_layout.setContentsMargins(4, 4, 4, 4)
+        self.qr_display_size = qr_box_size
         self.lbl_qr = QLabel()
-        self.lbl_qr.setFixedSize(230, 230)
-        self.lbl_qr.setScaledContents(True)
+        self.lbl_qr.setFixedSize(qr_box_size, qr_box_size)
+        self.lbl_qr.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_qr.setStyleSheet("border: none; background: transparent;")
         qr_layout.addWidget(self.lbl_qr)
         left_box.addWidget(qr_frame, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -1431,11 +1442,11 @@ class LockScreenWindow(QMainWindow):
         self.qr_progress.setRange(0, 30)
         self.qr_progress.setValue(30)
         self.qr_progress.setTextVisible(False)
-        self.qr_progress.setFixedSize(260, 8)
+        self.qr_progress.setFixedSize(qr_box_size + 24, 8)
         self.qr_progress.setStyleSheet("""
             QProgressBar {
-                background-color: rgba(15, 23, 42, 0.9);
-                border: 1px solid rgba(56, 189, 248, 0.25);
+                background-color: #060f1e;
+                border: 1px solid rgba(56, 189, 248, 0.35);
                 border-radius: 4px;
             }
             QProgressBar::chunk {
@@ -1446,131 +1457,157 @@ class LockScreenWindow(QMainWindow):
         left_box.addWidget(self.qr_progress, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.lbl_qr_timer = QLabel("🔄 Güvenlik QR kodu 30 sn içinde yenilenecek")
-        self.lbl_qr_timer.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.lbl_qr_timer.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.DemiBold))
         self.lbl_qr_timer.setStyleSheet("color: #94a3b8; border: none; background: transparent;")
         left_box.addWidget(self.lbl_qr_timer, alignment=Qt.AlignmentFlag.AlignCenter)
 
         qr_hint = QLabel("📱 Tahta Kilit Mobil Uygulaması ile Okutun")
-        qr_hint.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        qr_hint.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.Bold))
         qr_hint.setStyleSheet("""
             color: #38bdf8;
-            background: rgba(56, 189, 248, 0.12);
-            padding: 6px 18px;
+            background: rgba(56, 189, 248, 0.14);
+            padding: 5px 16px;
             border-radius: 999px;
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            margin-top: 4px;
+            border: 1px solid rgba(56, 189, 248, 0.35);
         """)
         left_box.addWidget(qr_hint, alignment=Qt.AlignmentFlag.AlignCenter)
 
         body_layout.addWidget(left_card, 1)
 
-        # === SAĞ CAM KART (Tahta Kilit Logo Banner + Işıklı PIN Ekranı + Modern Dokunmatik Numpad) ===
+        # === SAĞ KART (Tahta Kilit Logo Banner + Işıklı PIN Ekranı + HD 3D Dokunmatik Numpad) ===
         right_card = QFrame()
         right_card.setObjectName("RightGlassCard")
         right_card.setStyleSheet("""
             QFrame#RightGlassCard {
                 background: qlineargradient(
                     x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(15, 33, 62, 0.86),
-                    stop:1 rgba(9, 20, 38, 0.92)
+                    stop:0 #0f2342,
+                    stop:1 #091528
                 );
-                border: 1.5px solid rgba(255, 94, 77, 0.35);
-                border-radius: 28px;
+                border: 2px solid rgba(255, 94, 77, 0.45);
+                border-radius: 24px;
             }
         """)
-        right_glow = QGraphicsDropShadowEffect(right_card)
-        right_glow.setBlurRadius(45)
-        right_glow.setColor(QColor(255, 94, 77, 65))
-        right_glow.setOffset(0, 8)
-        right_card.setGraphicsEffect(right_glow)
 
         right_box = QVBoxLayout(right_card)
-        right_box.setContentsMargins(36, 22, 36, 24)
-        right_box.setSpacing(10)
+        right_box.setContentsMargins(24, 14 if compact else 20, 24, 14 if compact else 20)
+        right_box.setSpacing(8 if compact else 10)
         right_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Tahta Kilit Tipografi Logosu
+        # Tahta Kilit Tipografi Logosu (SmoothTransformation ile cam gibi net!)
         logo_banner_path = get_asset_path("tahta_kilit_logo.png")
         if os.path.exists(logo_banner_path):
             lbl_tk_logo = QLabel()
-            lbl_tk_logo.setFixedSize(290, 96)
-            lbl_tk_logo.setScaledContents(True)
+            lbl_tk_logo.setFixedSize(logo_w, logo_h)
+            lbl_tk_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl_tk_logo.setStyleSheet("border: none; background: transparent;")
-            lbl_tk_logo.setPixmap(QPixmap(logo_banner_path))
+            lbl_tk_logo.setPixmap(
+                QPixmap(logo_banner_path).scaled(
+                    logo_w, logo_h,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            )
             right_box.addWidget(lbl_tk_logo, alignment=Qt.AlignmentFlag.AlignCenter)
         else:
             pin_title = QLabel("TAHTA KİLİT — PIN GİRİŞİ")
-            pin_title.setFont(QFont("Segoe UI", 18, QFont.Weight.ExtraBold))
+            pin_title.setFont(QFont("DejaVu Sans", 16, QFont.Weight.ExtraBold))
             pin_title.setStyleSheet("color: #f1f5f9; border: none; background: transparent;")
             right_box.addWidget(pin_title, alignment=Qt.AlignmentFlag.AlignCenter)
 
         pin_desc = QLabel("Dokunmatik tuş takımından öğretmen PIN kodunu giriniz:")
-        pin_desc.setFont(QFont("Segoe UI", 11))
-        pin_desc.setStyleSheet("color: #94a3b8; margin-bottom: 4px; border: none; background: transparent;")
+        pin_desc.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.DemiBold))
+        pin_desc.setStyleSheet("color: #cbd5e1; border: none; background: transparent;")
         right_box.addWidget(pin_desc, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # PIN Gösterge Ekranı (Işıklı Kapsül)
+        pin_w = numpad_w * 3 + numpad_spacing * 2
         self.pin_display = QLabel("○ ○ ○ ○")
-        self.pin_display.setFixedSize(310, 52)
-        self.pin_display.setFont(QFont("Segoe UI", 22, QFont.Weight.ExtraBold))
+        self.pin_display.setFixedSize(pin_w, 46 if compact else 52)
+        self.pin_display.setFont(QFont("DejaVu Sans", 19 if compact else 22, QFont.Weight.ExtraBold))
         self.pin_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._set_pin_display_style("normal")
         right_box.addWidget(self.pin_display, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Modern Yuvarlatılmış Numpad Izgarası
+        # Kristal Netliğinde 3D Dokunmatik Numpad Izgarası
         numpad_grid = QGridLayout()
-        numpad_grid.setSpacing(12)
+        numpad_grid.setSpacing(numpad_spacing)
 
         buttons = [
             ("1", 0, 0), ("2", 0, 1), ("3", 0, 2),
             ("4", 1, 0), ("5", 1, 1), ("6", 1, 2),
             ("7", 2, 0), ("8", 2, 1), ("9", 2, 2),
-            ("C", 3, 0), ("0", 3, 1), ("🔓", 3, 2),
+            ("SİL", 3, 0), ("0", 3, 1), ("AÇ ✓", 3, 2),
         ]
 
         for text, row, col in buttons:
             btn = QPushButton(text)
-            btn.setFixedSize(94, 62)
-            btn.setFont(QFont("Segoe UI", 17, QFont.Weight.Bold))
-            if text == "🔓":
+            btn.setFixedSize(numpad_w, numpad_h)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            if text == "AÇ ✓":
+                btn.setFont(QFont("DejaVu Sans", 13 if compact else 15, QFont.Weight.ExtraBold))
                 btn.setStyleSheet("""
                     QPushButton {
-                        background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #10b981, stop:1 #059669);
-                        color: white;
-                        border-radius: 16px;
-                        border: 1.5px solid #34d399;
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #34d399, stop:0.5 #10b981, stop:1 #059669);
+                        color: #ffffff;
+                        border-radius: 14px;
+                        border: 2px solid #6ee7b7;
+                        border-bottom: 4px solid #064e3b;
                     }
-                    QPushButton:hover { background: #059669; }
-                    QPushButton:pressed { background: #047857; }
+                    QPushButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6ee7b7, stop:1 #10b981);
+                    }
+                    QPushButton:pressed {
+                        background: #047857;
+                        border-bottom: 2px solid #064e3b;
+                    }
                 """)
                 btn.clicked.connect(self.verify_pin)
-            elif text == "C":
+            elif text == "SİL":
+                btn.setFont(QFont("DejaVu Sans", 13 if compact else 15, QFont.Weight.ExtraBold))
                 btn.setStyleSheet("""
                     QPushButton {
-                        background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #ff5e4d, stop:1 #dc2626);
-                        color: white;
-                        border-radius: 16px;
-                        border: 1.5px solid #f87171;
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #ff6b5b, stop:0.5 #ef4444, stop:1 #dc2626);
+                        color: #ffffff;
+                        border-radius: 14px;
+                        border: 2px solid #fca5a5;
+                        border-bottom: 4px solid #7f1d1d;
                     }
-                    QPushButton:hover { background: #ef4444; }
-                    QPushButton:pressed { background: #b91c1c; }
+                    QPushButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #fca5a5, stop:1 #ef4444);
+                    }
+                    QPushButton:pressed {
+                        background: #b91c1c;
+                        border-bottom: 2px solid #7f1d1d;
+                    }
                 """)
                 btn.clicked.connect(self.clear_pin)
             else:
+                btn.setFont(QFont("DejaVu Sans", 18 if compact else 21, QFont.Weight.ExtraBold))
                 btn.setStyleSheet("""
                     QPushButton {
-                        background: rgba(19, 38, 68, 0.92);
-                        color: #f8fafc;
-                        border-radius: 16px;
-                        border: 1.5px solid rgba(56, 189, 248, 0.28);
+                        background: qlineargradient(
+                            x1:0, y1:0, x2:0, y2:1,
+                            stop:0 #1e3a6d,
+                            stop:0.5 #152b52,
+                            stop:1 #0d1c36
+                        );
+                        color: #ffffff;
+                        border-radius: 14px;
+                        border: 2px solid #38bdf8;
+                        border-bottom: 4px solid #0284c7;
                     }
                     QPushButton:hover {
-                        background: rgba(30, 58, 102, 0.95);
-                        border-color: #38bdf8;
+                        background: qlineargradient(
+                            x1:0, y1:0, x2:0, y2:1,
+                            stop:0 #254a8a,
+                            stop:1 #17325e
+                        );
+                        border-color: #7dd3fc;
                     }
                     QPushButton:pressed {
                         background: #38bdf8;
-                        color: #060f1e;
+                        color: #050c18;
                         border-color: #ffffff;
                     }
                 """)
@@ -1587,20 +1624,22 @@ class LockScreenWindow(QMainWindow):
         # 4. Alt Bilgi Bandı (Footer): Günün Sözü + Mercan Robotik + 🛡️ ET Güvenliği Aktif & v1.1
         # -------------------------------------------------------------
         footer_bar = QFrame()
-        footer_bar.setFixedHeight(58)
+        footer_bar.setFixedHeight(footer_h)
         footer_bar.setStyleSheet("""
             QFrame {
-                background: rgba(7, 15, 30, 0.94);
-                border-top: 1.5px solid rgba(56, 189, 248, 0.22);
+                background: rgba(7, 15, 30, 0.96);
+                border-top: 2px solid rgba(56, 189, 248, 0.25);
             }
         """)
         footer_layout = QHBoxLayout(footer_bar)
-        footer_layout.setContentsMargins(28, 0, 28, 0)
-        footer_layout.setSpacing(14)
+        footer_layout.setContentsMargins(18 if compact else 28, 0, 18 if compact else 28, 0)
+        footer_layout.setSpacing(10 if compact else 14)
 
-        # Sol: Günün Sözü
+        # Sol: Günün Sözü (Esnek boyut — ekranı asla sağa doğru taşırmaz!)
         self.lbl_quote = QLabel(self.QUOTES[0])
-        self.lbl_quote.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
+        self.lbl_quote.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.DemiBold))
+        self.lbl_quote.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.lbl_quote.setMinimumWidth(120)
         self.lbl_quote.setStyleSheet("color: #94a3b8; border: none; background: transparent;")
         footer_layout.addWidget(self.lbl_quote, 1)
 
@@ -1608,50 +1647,56 @@ class LockScreenWindow(QMainWindow):
         dev_badge = QFrame()
         dev_badge.setStyleSheet("""
             QFrame {
-                background: rgba(15, 33, 62, 0.85);
-                border: 1px solid rgba(56, 189, 248, 0.35);
-                border-radius: 12px;
+                background: #0f2240;
+                border: 1.5px solid rgba(56, 189, 248, 0.45);
+                border-radius: 10px;
             }
         """)
         dev_layout = QHBoxLayout(dev_badge)
-        dev_layout.setContentsMargins(10, 4, 14, 4)
-        dev_layout.setSpacing(8)
+        dev_layout.setContentsMargins(8, 3, 12, 3)
+        dev_layout.setSpacing(7)
 
         mr_icon_path = get_asset_path("mercan_robotik_icon.png")
+        mr_dim = 28 if compact else 32
         if os.path.exists(mr_icon_path):
             lbl_mr_icon = QLabel()
-            lbl_mr_icon.setFixedSize(34, 34)
-            lbl_mr_icon.setScaledContents(True)
+            lbl_mr_icon.setFixedSize(mr_dim, mr_dim)
             lbl_mr_icon.setStyleSheet("border: none; background: transparent;")
-            lbl_mr_icon.setPixmap(QPixmap(mr_icon_path))
+            lbl_mr_icon.setPixmap(
+                QPixmap(mr_icon_path).scaled(
+                    mr_dim, mr_dim,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            )
             dev_layout.addWidget(lbl_mr_icon)
 
         lbl_dev_brand = QLabel("Geliştirici: <b style='color:#38bdf8;'>MERCAN</b> <b style='color:#ff5e4d;'>ROBOTİK</b>")
-        lbl_dev_brand.setFont(QFont("Segoe UI", 10))
-        lbl_dev_brand.setStyleSheet("color: #cbd5e1; border: none; background: transparent;")
+        lbl_dev_brand.setFont(QFont("DejaVu Sans", 9 if compact else 10))
+        lbl_dev_brand.setStyleSheet("color: #e2e8f0; border: none; background: transparent;")
         dev_layout.addWidget(lbl_dev_brand)
         footer_layout.addWidget(dev_badge)
 
         # Sağ: 🛡️ ET Güvenliği Aktif ve v1.1 Sürüm Rozeti
         self.lbl_et_security = QLabel("🛡️ ET Güvenliği Aktif")
-        self.lbl_et_security.setFont(QFont("Segoe UI", 10, QFont.Weight.ExtraBold))
+        self.lbl_et_security.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.ExtraBold))
         self.lbl_et_security.setStyleSheet("""
             color: #34d399;
-            background: rgba(16, 185, 129, 0.14);
-            padding: 6px 14px;
-            border-radius: 10px;
-            border: 1px solid rgba(52, 211, 153, 0.35);
+            background: rgba(16, 185, 129, 0.16);
+            padding: 5px 12px;
+            border-radius: 9px;
+            border: 1.5px solid rgba(52, 211, 153, 0.45);
         """)
         footer_layout.addWidget(self.lbl_et_security)
 
         lbl_version = QLabel(APP_VERSION)
-        lbl_version.setFont(QFont("Segoe UI", 10, QFont.Weight.ExtraBold))
+        lbl_version.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.ExtraBold))
         lbl_version.setStyleSheet("""
             color: #38bdf8;
-            background: rgba(56, 189, 248, 0.14);
-            padding: 6px 12px;
-            border-radius: 10px;
-            border: 1px solid rgba(56, 189, 248, 0.35);
+            background: rgba(56, 189, 248, 0.16);
+            padding: 5px 10px;
+            border-radius: 9px;
+            border: 1.5px solid rgba(56, 189, 248, 0.45);
         """)
         footer_layout.addWidget(lbl_version)
 
@@ -1728,11 +1773,14 @@ class LockScreenWindow(QMainWindow):
                 self._ensure_keyboard_grab()
 
     def show_kiosk_fullscreen(self):
-        """Tam ekran kiosk modunu başlatır ve klavyeyi kilitler."""
+        """Tam ekran kiosk modunu ekran çözünürlüğüne birebir sığacak şekilde başlatır ve klavyeyi kilitler."""
         screen = QApplication.primaryScreen()
         if screen:
-            self.setGeometry(screen.geometry())
-        self.showFullScreen()
+            geo = screen.geometry()
+            self.setFixedSize(geo.width(), geo.height())
+            self.setGeometry(geo)
+            self.move(geo.x(), geo.y())
+        self.show()
         self.raise_()
         self.activateWindow()
         self._ensure_keyboard_grab()
@@ -1752,8 +1800,22 @@ class LockScreenWindow(QMainWindow):
                 QTimer.singleShot(10, self.restore_kiosk_fullscreen)
         super().changeEvent(event)
 
+    def _fit_school_label_font(self):
+        if not hasattr(self, "lbl_school") or not self.lbl_school:
+            return
+        avail_w = max(160, self.lbl_school.width() - 28)
+        text = self.lbl_school.text()
+        for pt in [12, 11, 10, 9, 8]:
+            f = QFont("DejaVu Sans", pt, QFont.Weight.Bold)
+            from PyQt6.QtGui import QFontMetrics
+            if QFontMetrics(f).horizontalAdvance(text) <= avail_w:
+                self.lbl_school.setFont(f)
+                return
+        self.lbl_school.setFont(QFont("DejaVu Sans", 8, QFont.Weight.Bold))
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._fit_school_label_font()
         for overlay in [
             getattr(self, "announcement_overlay", None),
             getattr(self, "settings_overlay", None),
@@ -1822,7 +1884,14 @@ class LockScreenWindow(QMainWindow):
 
         data = img.tobytes("raw", "RGBA")
         qim = QImage(data, img.size[0], img.size[1], QImage.Format.Format_RGBA8888)
-        self.lbl_qr.setPixmap(QPixmap.fromImage(qim))
+        target_sz = getattr(self, "qr_display_size", 215)
+        self.lbl_qr.setPixmap(
+            QPixmap.fromImage(qim).scaled(
+                target_sz, target_sz,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+        )
 
     # -------------------------------------------------------------
     # 🔢 PIN Numpad İşlemleri
@@ -2029,6 +2098,7 @@ class LockScreenWindow(QMainWindow):
 
         self.lbl_class.setText(f"🖥️ {self.sinif_adi}")
         self.lbl_school.setText(f"🏫 {self.okul_adi}")
+        self._fit_school_label_font()
         self.generate_qr()
 
         if new_url != old_url:
