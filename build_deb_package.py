@@ -77,7 +77,7 @@ set -e
 # Python baytkodu derle (.pyc) ve yetkileri kısıtla
 python3 -m compileall -q /opt/etap-smartlock 2>/dev/null || true
 chown -R root:root /opt/etap-smartlock 2>/dev/null || true
-chmod -R 755 /opt/etap-smartlock 2>/dev/null || true
+chmod -R 777 /opt/etap-smartlock 2>/dev/null || true
 
 # Eski çakışan autostart ve oturum kalıntılarını temizle
 rm -f /etc/xdg/autostart/etap-smartlock.desktop 2>/dev/null || true

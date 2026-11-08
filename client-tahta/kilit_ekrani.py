@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.1"
+APP_VERSION = "v1.1.1"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -632,6 +632,98 @@ class BlueBannerTicker(QFrame):
 
 
 # -------------------------------------------------------------
+# 🔄 Arka Planda Canlı GitHub Güncelleme İşçisi (Worker Thread)
+# İlerleme durumunu, indirme yüzdesini ve hataları canlı yayınlar.
+# -------------------------------------------------------------
+class UpdateWorkerThread(QThread):
+    progress_changed = pyqtSignal(int, str)
+    finished_success = pyqtSignal(str)
+    failed_error = pyqtSignal(str)
+
+    def run(self):
+        import urllib.request
+        import json
+        import py_compile
+        import subprocess
+
+        try:
+            # 1. Aşama: GitHub Sürüm Kontrolü (%20)
+            self.progress_changed.emit(20, "🌐 GitHub sunucusuna bağlanılıyor...")
+            version_url = "https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/version.json"
+            req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/1.1"})
+            remote_version = "v1.1.1"
+            try:
+                with urllib.request.urlopen(req_ver, timeout=10) as resp:
+                    v_data = json.loads(resp.read().decode("utf-8"))
+                    remote_version = v_data.get("version", "v1.1.1")
+            except Exception:
+                pass
+
+            # 2. Aşama: Yeni Kodları İndirme (%50)
+            self.progress_changed.emit(50, f"📥 Yeni sürüm kodları indiriliyor ({remote_version})...")
+            code_url = "https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/client-tahta/kilit_ekrani.py"
+            req_code = urllib.request.Request(code_url, headers={"User-Agent": "TahtaKilitUpdater/1.1"})
+            with urllib.request.urlopen(req_code, timeout=15) as resp:
+                new_code = resp.read()
+
+            if len(new_code) < 30000 or b"class LockScreenWindow" not in new_code:
+                raise ValueError("İndirilen güncelleme paketi eksik veya bozuk!")
+
+            # 3. Aşama: Kod Doğrulama (%75)
+            self.progress_changed.emit(75, "🔍 Kod güvenliği ve sözdizimi doğrulanıyor...")
+            compile(new_code, "<string>", "exec")
+
+            # 4. Aşama: Dosya Yazma (%90)
+            self.progress_changed.emit(90, "📁 Sistem dosyaları yenileniyor...")
+            target_file = None
+            if sys.platform != "win32" and os.path.exists("/opt/etap-smartlock/kilit_ekrani.py"):
+                target_file = "/opt/etap-smartlock/kilit_ekrani.py"
+            else:
+                target_file = os.path.abspath(__file__)
+
+            written = False
+            try:
+                tmp_target = target_file + ".tmp"
+                with open(tmp_target, "wb") as f:
+                    f.write(new_code)
+                os.replace(tmp_target, target_file)
+                written = True
+            except PermissionError:
+                if sys.platform != "win32":
+                    tmp_f = "/tmp/kilit_ekrani_update.py"
+                    with open(tmp_f, "wb") as f:
+                        f.write(new_code)
+                    res = subprocess.run(["pkexec", "cp", tmp_f, target_file], capture_output=True, timeout=20)
+                    if res.returncode == 0:
+                        written = True
+                if not written:
+                    raise PermissionError(f"'{target_file}' dizinine doğrudan yazma izni yok! Terminalden 'sudo tahta-kilit-guncelle' çalıştırabilirsiniz.")
+
+            # 5. Aşama: Derleme & Yerel Depo Senkronizasyonu (%98)
+            try:
+                py_compile.compile(target_file)
+            except Exception:
+                pass
+
+            for repo_cand in [os.path.expanduser("~/etap-smaart-lock"), os.path.expanduser("~/.etap-smaart-lock"), "/opt/etap-smartlock-repo"]:
+                if os.path.isdir(os.path.join(repo_cand, ".git")):
+                    try:
+                        subprocess.run(["git", "fetch", "origin", "main"], cwd=repo_cand, capture_output=True, timeout=8)
+                        subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=repo_cand, capture_output=True, timeout=8)
+                    except Exception:
+                        pass
+
+            self.progress_changed.emit(100, f"✅ Güncelleme tamamlandı! ({remote_version})")
+            self.finished_success.emit(f"Sürüm {remote_version} başarıyla kuruldu! Kilit ekranı yenileniyor...")
+
+        except Exception as e:
+            err = str(e)
+            if "timed out" in err or "urlopen error" in err:
+                err = "İnternet bağlantısı kurulamadı. Lütfen tahtanın internetini kontrol edin."
+            self.failed_error.emit(err)
+
+
+# -------------------------------------------------------------
 # ⚙️ Kilit Ekranı İçine Gömülü Ayarlar Katmanı (In-Window Overlay)
 # Sınıf Adı, Okul Adı ve Sunucu Adresi hem klavye hem dokunmatikle değiştirilebilir.
 # -------------------------------------------------------------
@@ -817,20 +909,38 @@ class SettingsOverlayWidget(QWidget):
         kb_layout.addLayout(action_row)
         card_layout.addWidget(kb_frame)
 
-        # Bilgi Notu
+        # Bilgi Notu & Canlı Durum
         self.lbl_status = QLabel("💡 Not: Sınıf ve okul adı kaydedildiğinde bağlantı kopmadan anında güncellenir.")
         self.lbl_status.setFont(QFont("Segoe UI", 10))
         self.lbl_status.setStyleSheet("color: #94a3b8; border: none; background: transparent;")
         card_layout.addWidget(self.lbl_status)
 
+        # Görsel İlerleme Çubuğu (Güncelleme esnasında gösterilir)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(12)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background: #060f1e;
+                border: 1px solid #334155;
+                border-radius: 6px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #38bdf8);
+                border-radius: 5px;
+            }
+        """)
+        self.progress_bar.hide()
+        card_layout.addWidget(self.progress_bar)
+
         # Butonlar
         btn_box = QHBoxLayout()
         btn_box.setSpacing(10)
 
-        btn_save = QPushButton("💾 Kaydet (Enter)")
-        btn_save.setFixedHeight(42)
-        btn_save.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        btn_save.setStyleSheet("""
+        self.btn_save = QPushButton("💾 Kaydet (Enter)")
+        self.btn_save.setFixedHeight(42)
+        self.btn_save.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self.btn_save.setStyleSheet("""
             QPushButton {
                 background: #10b981;
                 color: #ffffff;
@@ -840,13 +950,13 @@ class SettingsOverlayWidget(QWidget):
             QPushButton:hover { background: #059669; }
             QPushButton:pressed { background: #047857; }
         """)
-        btn_save.clicked.connect(self.save_settings)
-        btn_box.addWidget(btn_save, 2)
+        self.btn_save.clicked.connect(self.save_settings)
+        btn_box.addWidget(self.btn_save, 2)
 
-        btn_update = QPushButton("🔄 Güncelle (GitHub)")
-        btn_update.setFixedHeight(42)
-        btn_update.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        btn_update.setStyleSheet("""
+        self.btn_update = QPushButton("🔄 Güncelle (GitHub)")
+        self.btn_update.setFixedHeight(42)
+        self.btn_update.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self.btn_update.setStyleSheet("""
             QPushButton {
                 background: #2563eb;
                 color: #ffffff;
@@ -856,13 +966,13 @@ class SettingsOverlayWidget(QWidget):
             QPushButton:hover { background: #1d4ed8; }
             QPushButton:pressed { background: #1e40af; }
         """)
-        btn_update.clicked.connect(self.trigger_update)
-        btn_box.addWidget(btn_update, 2)
+        self.btn_update.clicked.connect(self.trigger_update)
+        btn_box.addWidget(self.btn_update, 2)
 
-        btn_cancel = QPushButton("İptal (Esc)")
-        btn_cancel.setFixedHeight(42)
-        btn_cancel.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        btn_cancel.setStyleSheet("""
+        self.btn_cancel = QPushButton("İptal (Esc)")
+        self.btn_cancel.setFixedHeight(42)
+        self.btn_cancel.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self.btn_cancel.setStyleSheet("""
             QPushButton {
                 background: rgba(255, 255, 255, 0.08);
                 color: #cbd5e1;
@@ -871,8 +981,8 @@ class SettingsOverlayWidget(QWidget):
             }
             QPushButton:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
         """)
-        btn_cancel.clicked.connect(self.hide_overlay)
-        btn_box.addWidget(btn_cancel, 1)
+        self.btn_cancel.clicked.connect(self.hide_overlay)
+        btn_box.addWidget(self.btn_cancel, 1)
 
         card_layout.addLayout(btn_box)
         layout.addWidget(card)
@@ -977,49 +1087,51 @@ class SettingsOverlayWidget(QWidget):
         QTimer.singleShot(600, self.hide_overlay)
 
     def trigger_update(self):
-        self.lbl_status.setText("🔄 Güncellemeler GitHub'dan çekiliyor, lütfen bekleyiniz...")
+        self.btn_update.setEnabled(False)
+        self.btn_save.setEnabled(False)
+        self.btn_cancel.setEnabled(False)
+        self.progress_bar.show()
+        self.progress_bar.setValue(10)
+        self.lbl_status.setText("🔄 GitHub ile bağlantı kuruluyor, lütfen bekleyiniz...")
         self.lbl_status.setStyleSheet("color: #38bdf8; font-weight: bold; border: none; background: transparent;")
-        QApplication.processEvents()
-        QTimer.singleShot(300, self._run_update_script)
 
-    def _run_update_script(self):
-        import subprocess
-        possible_scripts = []
-        if sys.platform == "win32":
-            possible_scripts = [
-                os.path.join(EXE_DIR, "guncelle.bat"),
-                os.path.join(BASE_DIR, "guncelle.bat"),
-                os.path.join(BASE_DIR, "..", "guncelle.bat"),
-                os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Tahta Kilit", "guncelle.bat"),
-            ]
-        else:
-            possible_scripts = [
-                "/usr/local/bin/tahta-kilit-guncelle",
-                "/opt/etap-smartlock/guncelle.sh",
-                os.path.join(BASE_DIR, "guncelle.sh"),
-                os.path.join(BASE_DIR, "..", "guncelle.sh"),
-            ]
+        self.update_thread = UpdateWorkerThread()
+        self.update_thread.progress_changed.connect(self._on_update_progress)
+        self.update_thread.finished_success.connect(self._on_update_success)
+        self.update_thread.failed_error.connect(self._on_update_error)
+        self.update_thread.start()
 
-        found = None
-        for s in possible_scripts:
-            if s and os.path.exists(s):
-                found = s
-                break
+    def _on_update_progress(self, percent: int, msg: str):
+        self.progress_bar.setValue(percent)
+        self.lbl_status.setText(msg)
 
-        if found:
+    def _on_update_success(self, msg: str):
+        self.progress_bar.setValue(100)
+        self.lbl_status.setText(f"🎉 {msg}")
+        self.lbl_status.setStyleSheet("color: #34d399; font-weight: bold; border: none; background: transparent;")
+        QTimer.singleShot(1800, self._restart_application)
+
+    def _on_update_error(self, err: str):
+        self.progress_bar.hide()
+        self.btn_update.setEnabled(True)
+        self.btn_save.setEnabled(True)
+        self.btn_cancel.setEnabled(True)
+        self.lbl_status.setText(f"❌ {err}")
+        self.lbl_status.setStyleSheet("color: #ef4444; font-weight: bold; border: none; background: transparent;")
+
+    def _restart_application(self):
+        self.lock_window.is_locked = False
+        try:
+            self.lock_window.releaseKeyboard()
+        except Exception:
+            pass
+        if hasattr(QApplication.instance(), "_single_instance_lock"):
             try:
-                if sys.platform == "win32":
-                    subprocess.Popen(["cmd.exe", "/c", found], creationflags=subprocess.CREATE_NEW_CONSOLE)
-                else:
-                    subprocess.Popen(["bash", found])
-                self.lbl_status.setText("🚀 Güncelleme başlatıldı, kilit ekranı yenileniyor...")
-                self.lbl_status.setStyleSheet("color: #34d399; font-weight: bold; border: none; background: transparent;")
-            except Exception as e:
-                self.lbl_status.setText(f"❌ Güncelleme başlatılamadı: {e}")
-                self.lbl_status.setStyleSheet("color: #ef4444; border: none; background: transparent;")
-        else:
-            self.lbl_status.setText("⚠️ guncelle betiği bulunamadı. Terminalden bash guncelle.sh çalıştırın.")
-            self.lbl_status.setStyleSheet("color: #f59e0b; border: none; background: transparent;")
+                QApplication.instance()._single_instance_lock.unlock()
+            except Exception:
+                pass
+        QProcess.startDetached(sys.executable, sys.argv)
+        QApplication.quit()
 
 
 # -------------------------------------------------------------

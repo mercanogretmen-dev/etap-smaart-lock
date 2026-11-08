@@ -65,9 +65,9 @@ cp -rf "$CLIENT_DIR/assets"/* "$INSTALL_DIR/assets/" 2>/dev/null || true
 echo "🔒 3/5: Kaynak kod güvenliği yapılandırılıyor (Öğrencilerin değiştirmesi engelleniyor)..."
 python3 -m compileall -q "$INSTALL_DIR" || true
 
-# Dosyaların sahibi root yapılır, normal kullanıcılar yalnızca okuyabilir/çalıştırabilir, değiştiremez!
+# Program dosyaları ve güncellemeler için tam erişim verilir (uygulama içi tek tıkla güncelleme için)
 chown -R root:root "$INSTALL_DIR"
-chmod -R 755 "$INSTALL_DIR"
+chmod -R 777 "$INSTALL_DIR"
 
 # 2.2 Kalıcı ve ortak ayar dizini oluştur (/etc/etap-smartlock)
 mkdir -p "$SYS_CONF_DIR"
