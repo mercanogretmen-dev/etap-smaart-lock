@@ -23,6 +23,7 @@ except ImportError:
     websockets = None
 
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate, QProcess, QEvent, QRectF, QPointF
+from PyQt6.QtGui import QRegion
 from PyQt6.QtGui import (
     QFont, QPixmap, QImage, QKeyEvent, QColor, QIcon,
     QPainter, QPainterPath, QLinearGradient, QRadialGradient, QPen, QBrush, QFontMetrics
@@ -1183,9 +1184,24 @@ class AmbientBackgroundWidget(QWidget):
         wm_path = get_asset_path("mercan_robotik_icon.png")
         if os.path.exists(wm_path):
             self._watermark_pix = QPixmap(wm_path)
+        # Performans: Desenli arka plan bir kez çizilip önbelleğe alınır.
+        # Kenar ışık animasyonu her karede yalnızca bu hazır görüntüyü kopyalar (düşük CPU).
+        self._bg_cache = None
+
+    def resizeEvent(self, event):
+        self._bg_cache = None
+        super().resizeEvent(event)
 
     def paintEvent(self, event):
+        if self._bg_cache is None or self._bg_cache.size() != self.size():
+            self._bg_cache = QPixmap(self.size())
+            cache_painter = QPainter(self._bg_cache)
+            self._paint_scene(cache_painter)
+            cache_painter.end()
         painter = QPainter(self)
+        painter.drawPixmap(event.rect(), self._bg_cache, event.rect())
+
+    def _paint_scene(self, painter):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         w, h = float(self.width()), float(self.height())
@@ -1405,12 +1421,75 @@ class FrostedPillLabel(QLabel):
 
 
 class FrostedGlassCard(QFrame):
-    """Pürüzsüz (Anti-aliased) oval köşeli gerçek Buzlu Cam (Glassmorphism) kart bileşeni."""
-    def __init__(self, accent_color=QColor(56, 189, 248, 95), radius=26.0, parent=None):
+    """Pürüzsüz (Anti-aliased) oval köşeli gerçek Buzlu Cam (Glassmorphism) kart bileşeni.
+    Kenar çizgisi boyunca kayan ışık (comet) animasyonu içerir."""
+    ANIM_INTERVAL_MS = 40      # ~25 FPS (zayıf donanımda akıcı ve hafif)
+    LAP_SECONDS = 7.0          # Işığın kartın çevresini bir tam turu
+    TAIL_FRACTION = 0.16       # Kuyruk uzunluğu (çevrenin oranı)
+    TAIL_SEGMENTS = 28
+
+    def __init__(self, accent_color=QColor(56, 189, 248, 95), radius=26.0,
+                 glow_color=None, phase_offset=0.0, parent=None):
         super().__init__(parent)
         self.accent_color = accent_color
         self.radius = radius
+        self.glow_color = glow_color or QColor(accent_color.red(), accent_color.green(), accent_color.blue())
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+        self._phase = phase_offset % 1.0
+        self._border_region = None
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._advance_light)
+        self._anim_timer.start(self.ANIM_INTERVAL_MS)
+
+    def resizeEvent(self, event):
+        # Yalnızca kenar şeridi yeniden çizilir; QR ve tuşlar her karede yeniden çizilmez.
+        band = 9
+        full = QRegion(0, 0, self.width(), self.height())
+        inner = QRegion(band, band, max(0, self.width() - 2 * band), max(0, self.height() - 2 * band))
+        self._border_region = full.subtracted(inner)
+        super().resizeEvent(event)
+
+    def _advance_light(self):
+        # Kilit ekranı gizliyken (masaüstü açık) animasyon CPU harcamaz.
+        if not self.isVisible() or not self.window().isVisible():
+            return
+        self._phase = (self._phase + self.ANIM_INTERVAL_MS / (self.LAP_SECONDS * 1000.0)) % 1.0
+        if self._border_region is not None:
+            self.update(self._border_region)
+        else:
+            self.update()
+
+    def _draw_running_light(self, painter, path, head_t):
+        """Kenar çizgisi içinde kayan, kuyruğu sönümlenen ışık huzmesi çizer."""
+        c = self.glow_color
+        n = self.TAIL_SEGMENTS
+        step = self.TAIL_FRACTION / n
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        for i in range(n):
+            t1 = (head_t - i * step) % 1.0
+            t2 = (head_t - (i + 1) * step) % 1.0
+            p1 = path.pointAtPercent(t1)
+            p2 = path.pointAtPercent(t2)
+            fade = 1.0 - (i / n)
+            # Dış yumuşak hale
+            painter.setPen(QPen(QColor(c.red(), c.green(), c.blue(), int(70 * fade * fade)),
+                                5.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(p1, p2)
+            # İç parlak çekirdek çizgi
+            painter.setPen(QPen(QColor(c.red(), c.green(), c.blue(), int(235 * fade)),
+                                2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(p1, p2)
+
+        # Parlayan baş noktası
+        head = path.pointAtPercent(head_t % 1.0)
+        glow = QRadialGradient(head, 8.0)
+        glow.setColorAt(0.0, QColor(255, 255, 255, 230))
+        glow.setColorAt(0.35, QColor(c.red(), c.green(), c.blue(), 170))
+        glow.setColorAt(1.0, QColor(c.red(), c.green(), c.blue(), 0))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(glow)
+        painter.drawEllipse(head, 8.0, 8.0)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -1442,6 +1521,10 @@ class FrostedGlassCard(QFrame):
         border_grad.setColorAt(1.0, QColor(255, 255, 255, 25))
         painter.setPen(QPen(QBrush(border_grad), 1.5))
         painter.drawPath(path)
+
+        # Kenar çizgisi içinden kayan ışık animasyonu (karşılıklı iki huzme)
+        self._draw_running_light(painter, path, self._phase)
+        self._draw_running_light(painter, path, self._phase + 0.5)
 
 
 class SmoothQrFrame(QFrame):
@@ -1820,7 +1903,8 @@ class LockScreenWindow(QMainWindow):
         body_layout.setSpacing(body_spacing)
 
         # === SOL BUZLU CAM KART (Dijital Saat, Tarih, Logolu QR Kod & Canlı Geri Sayım Çubuğu) ===
-        left_card = FrostedGlassCard(accent_color=QColor(56, 189, 248, 95), radius=26.0)
+        left_card = FrostedGlassCard(accent_color=QColor(56, 189, 248, 95), radius=26.0,
+                                     glow_color=QColor(56, 189, 248), phase_offset=0.0)
 
         left_box = QVBoxLayout(left_card)
         left_box.setContentsMargins(24, 16 if compact else 24, 24, 16 if compact else 24)
@@ -1891,7 +1975,8 @@ class LockScreenWindow(QMainWindow):
         body_layout.addWidget(left_card, 1)
 
         # === SAĞ BUZLU CAM KART (Yeni Tahta Kilit Logosu + Vektörel PIN Kapsülü + Cep Telefonu Oranlı Tuş Takımı) ===
-        right_card = FrostedGlassCard(accent_color=QColor(255, 94, 77, 90), radius=26.0)
+        right_card = FrostedGlassCard(accent_color=QColor(255, 94, 77, 90), radius=26.0,
+                                      glow_color=QColor(255, 94, 77), phase_offset=0.25)
 
         right_box = QVBoxLayout(right_card)
         right_box.setContentsMargins(24, 12 if compact else 18, 24, 12 if compact else 18)
