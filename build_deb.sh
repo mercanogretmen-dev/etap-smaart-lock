@@ -52,6 +52,11 @@ python3 -m compileall -q /opt/etap-smartlock 2>/dev/null || true
 chown -R root:root /opt/etap-smartlock
 chmod -R 755 /opt/etap-smartlock
 
+# Eski çakışan autostart ve oturum kalıntılarını temizle
+rm -f /etc/xdg/autostart/etap-smartlock.desktop 2>/dev/null || true
+rm -f /home/*/.config/autostart/etap-smartlock.desktop 2>/dev/null || true
+rm -rf /home/*/.cache/sessions/* 2>/dev/null || true
+
 # Kalıcı ayar dosyası oluştur
 if [ ! -f /etc/etap-smartlock/config.ini ] && [ -f /opt/etap-smartlock/config.ini.default ]; then
     cp /opt/etap-smartlock/config.ini.default /etc/etap-smartlock/config.ini

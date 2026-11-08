@@ -98,6 +98,20 @@ chmod 755 /usr/local/bin/tahta-kilit-kaldir
 
 # 4. Otomatik Başlatma (Autostart) ve Başlat Menüsü (.desktop)
 echo "⚙️ 4/5: Başlat menüsü ve otomatik açılış yapılandırılıyor..."
+# Çift açılış ve ekran çakışmalarını önlemek için eski/mükerrer kayıtları temizle
+pkill -9 -f kilit_ekrani.py 2>/dev/null || true
+rm -f /etc/xdg/autostart/etap-smartlock.desktop
+rm -f /etc/xdg/autostart/tahta-kilit.desktop
+rm -f /usr/share/applications/etap-smartlock.desktop 2>/dev/null || true
+rm -f /home/*/.config/autostart/etap-smartlock.desktop 2>/dev/null || true
+rm -f /home/*/.config/autostart/tahta-kilit.desktop 2>/dev/null || true
+rm -f /root/.config/autostart/etap-smartlock.desktop 2>/dev/null || true
+rm -f /root/.config/autostart/tahta-kilit.desktop 2>/dev/null || true
+# XFCE oturum önbelleğini temizle (yeniden başlatıldığında açık kalan pencerelerin tekrar dirilmesini önler)
+rm -rf /home/*/.cache/sessions/* 2>/dev/null || true
+rm -rf /root/.cache/sessions/* 2>/dev/null || true
+rm -f /tmp/tahta_kilit_*.lock /tmp/tahta_kilit*.lock 2>/dev/null || true
+
 mkdir -p /etc/xdg/autostart
 mkdir -p /usr/share/applications
 

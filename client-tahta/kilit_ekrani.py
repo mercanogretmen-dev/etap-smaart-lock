@@ -22,7 +22,7 @@ try:
 except ImportError:
     websockets = None
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate, QProcess, QEvent, QRectF, QPointF
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QTime, QDate, QProcess, QEvent, QRectF, QPointF, QLockFile, QStandardPaths
 from PyQt6.QtGui import QRegion
 from PyQt6.QtGui import (
     QFont, QPixmap, QImage, QKeyEvent, QColor, QIcon,
@@ -2593,9 +2593,35 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(DEVELOPER_NAME)
+
+    # 🔒 Çift Açılış Koruması (Single Instance Mutex / Lock)
+    # Sistemin yeniden başlaması, oturum kurtarma veya çift tıklama durumunda
+    # 2. kopyanın açılmasını, ekranların üst üste binmesini ve karekod çakışmasını KESİN olarak engeller.
+    temp_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation)
+    user_identifier = os.environ.get("USER", os.environ.get("USERNAME", "etapadmin"))
+    lock_file_path = os.path.join(temp_dir, f"tahta_kilit_{user_identifier}.lock")
+    lock_file = QLockFile(lock_file_path)
+    lock_file.setStaleLockTime(10000)  # 10 saniye sonra ölü kilitleri otomatik temizle
+
+    if not lock_file.tryLock(150):
+        lock_info = lock_file.getLockInfo()
+        other_pid = lock_info[1] if lock_info and len(lock_info) > 1 else "Bilinmiyor"
+        print(f"⚠️ [{APP_NAME}] Zaten çalışan bir oturum mevcut (PID: {other_pid})!")
+        print("💡 Ekranların çakışmaması ve karekodun yanıp sönmemesi için 2. kopya güvenle durduruldu.")
+        sys.exit(0)
+
+    # Lock nesnesini çöp toplayıcıdan (GC) korumak için app nesnesine iliştir
+    app._single_instance_lock = lock_file
+
     window = LockScreenWindow()
     window.show_kiosk_fullscreen()
-    sys.exit(app.exec())
+    exit_code = app.exec()
+
+    try:
+        lock_file.unlock()
+    except Exception:
+        pass
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

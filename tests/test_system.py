@@ -256,6 +256,32 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         code_after = str((step_after * secret_salt + 104729) % 10000).zfill(4)
         self.assertNotEqual(code_start, code_after)
 
+    def test_05_single_instance_lock(self):
+        """QLockFile mekanizmasının çift oturum açılışını engellediğini doğrular."""
+        import tempfile
+        from PyQt6.QtCore import QLockFile
+
+        lock_path = os.path.join(tempfile.gettempdir(), "tahta_kilit_unittest.lock")
+        if os.path.exists(lock_path):
+            try:
+                os.remove(lock_path)
+            except Exception:
+                pass
+
+        lock1 = QLockFile(lock_path)
+        lock1.setStaleLockTime(5000)
+        self.assertTrue(lock1.tryLock(100), "Birinci kilit başarıyla alınmalı")
+
+        # İkinci kopya kilidi alamamalı (çift açılış engeli)
+        lock2 = QLockFile(lock_path)
+        lock2.setStaleLockTime(5000)
+        self.assertFalse(lock2.tryLock(50), "İkinci kilit engellenmeli!")
+
+        # Birinci kilit bırakıldığında ikinci kopya alabilmeli
+        lock1.unlock()
+        self.assertTrue(lock2.tryLock(100), "İlk kilit serbest kaldığında yeni kilit alınabilmeli")
+        lock2.unlock()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

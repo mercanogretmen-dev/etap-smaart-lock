@@ -29,6 +29,12 @@ rm -f /etc/xdg/autostart/tahta-kilit.desktop
 rm -f /etc/xdg/autostart/etap-smartlock.desktop
 rm -f /home/*/.config/autostart/tahta-kilit.desktop 2>/dev/null || true
 rm -f /home/*/.config/autostart/etap-smartlock.desktop 2>/dev/null || true
+rm -f /root/.config/autostart/tahta-kilit.desktop 2>/dev/null || true
+rm -f /root/.config/autostart/etap-smartlock.desktop 2>/dev/null || true
+# XFCE oturum önbelleğini ve kilit dosyalarını temizle
+rm -rf /home/*/.cache/sessions/* 2>/dev/null || true
+rm -rf /root/.cache/sessions/* 2>/dev/null || true
+rm -f /tmp/tahta_kilit_*.lock /tmp/tahta_kilit*.lock 2>/dev/null || true
 
 # 3. Başlat Menüsü (.desktop) kısayollarını sil
 echo "🗑️ 3/6: Pardus Başlat Menüsü kısayolları kaldırılıyor..."

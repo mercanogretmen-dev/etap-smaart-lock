@@ -26,7 +26,9 @@ echo "========================================================"
 
 # 1. Çalışan eski kilit ekranını kapat
 echo "🛑 1/3: Çalışan kilit ekranı durduruluyor..."
-sudo pkill -f kilit_ekrani.py 2>/dev/null || true
+sudo pkill -9 -f kilit_ekrani.py 2>/dev/null || true
+sudo pkill -9 -f tahta-kilit 2>/dev/null || true
+rm -f /tmp/tahta_kilit_*.lock /tmp/tahta_kilit*.lock 2>/dev/null || true
 sleep 1
 
 # 2. GitHub'dan en son kodları çek
