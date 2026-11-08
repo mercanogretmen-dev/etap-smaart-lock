@@ -1420,85 +1420,6 @@ class FrostedPillLabel(QLabel):
         super().paintEvent(event)
 
 
-class BacklitGlowBody(QWidget):
-    """Buzlu cam kartların ARKASINA döşenmiş LED şerit etkisi.
-    Işık, kart kenar çizgisinin hemen dışından arkaya doğru yayılır ve
-    yumuşak bir 'nefes alma' ritmiyle yavaş yavaş parlayıp yavaş yavaş söner."""
-    ANIM_INTERVAL_MS = 50      # ~20 FPS — yavaş bir parlama için fazlasıyla akıcı ve hafif
-    BREATH_SECONDS = 5.0       # Bir tam parlama + sönme döngüsü
-    MIN_INTENSITY = 0.12       # En sönük anda bile çok hafif bir ışık kalır
-    GLOW_SIZE = 18.0           # Işığın kenardan dışarı yayılma mesafesi (px)
-    GLOW_LAYERS = 12
-    MAX_ALPHA = 120
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self._cards = []          # (kart, renk)
-        self._t0 = time.time()
-        self._intensity = self.MIN_INTENSITY
-        self._timer = QTimer(self)
-        self._timer.timeout.connect(self._tick)
-        self._timer.start(self.ANIM_INTERVAL_MS)
-
-    def add_card(self, card, color: QColor):
-        self._cards.append((card, color))
-
-    def _tick(self):
-        # Kilit ekranı gizliyken (masaüstü açık) animasyon işlemci harcamaz.
-        if not self.isVisible() or not self.window().isVisible():
-            return
-        import math
-        phase = ((time.time() - self._t0) % self.BREATH_SECONDS) / self.BREATH_SECONDS
-        # Kosinüs eğrisi: başta ve sonda yavaşlayan, ani olmayan yumuşak geçiş
-        breath = 0.5 - 0.5 * math.cos(2.0 * math.pi * phase)
-        self._intensity = self.MIN_INTENSITY + (1.0 - self.MIN_INTENSITY) * breath
-
-        # Yalnızca kartların çevresindeki ışık halkası yeniden çizilir
-        g = int(self.GLOW_SIZE) + 2
-        region = QRegion()
-        for card, _ in self._cards:
-            r = card.geometry()
-            outer = QRegion(r.adjusted(-g, -g, g, g))
-            inner = QRegion(r.adjusted(30, 30, -30, -30))
-            region = region.united(outer.subtracted(inner))
-        self.update(region)
-
-    def paintEvent(self, event):
-        if not self._cards:
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        k = self._intensity
-        n = self.GLOW_LAYERS
-
-        for card, color in self._cards:
-            geo = QRectF(card.geometry()).adjusted(1.5, 1.5, -1.5, -1.5)
-            radius = getattr(card, "radius", 26.0)
-
-            card_path = QPainterPath()
-            card_path.addRoundedRect(geo, radius, radius)
-            # Işık sadece çerçevenin DIŞINDA görünür (kartın içine sızmaz)
-            outside = QPainterPath()
-            outside.addRect(QRectF(self.rect()))
-            painter.save()
-            painter.setClipPath(outside.subtracted(card_path))
-
-            for i in range(n):
-                d = (i + 0.5) * self.GLOW_SIZE / n
-                fall = (1.0 - i / n) ** 2.2          # dışa doğru yumuşak sönümlenme
-                alpha = int(self.MAX_ALPHA * k * fall)
-                if alpha <= 0:
-                    continue
-                ring = QPainterPath()
-                ring.addRoundedRect(geo.adjusted(-d, -d, d, d), radius + d, radius + d)
-                painter.setPen(QPen(QColor(color.red(), color.green(), color.blue(), alpha),
-                                    self.GLOW_SIZE / n + 1.2))
-                painter.drawPath(ring)
-            painter.restore()
-
-
 class FrostedGlassCard(QFrame):
     """Pürüzsüz (Anti-aliased) oval köşeli gerçek Buzlu Cam (Glassmorphism) kart bileşeni."""
     def __init__(self, accent_color=QColor(56, 189, 248, 95), radius=26.0, parent=None):
@@ -1909,15 +1830,14 @@ class LockScreenWindow(QMainWindow):
         # 3. Orta Gövde: İki Pürüzsüz Vektörel Buzlu Cam Kart (FrostedGlassCard)
         # Oval köşeler QPainter Antialiasing ile çizildiği için piksel kırılması %0'dır!
         # -------------------------------------------------------------
-        # Kartların arkasındaki LED şerit ışığını çizen gövde katmanı
-        body = BacklitGlowBody()
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
         body_layout = QHBoxLayout(body)
         body_layout.setContentsMargins(body_margin_x, body_margin_y, body_margin_x, body_margin_y)
         body_layout.setSpacing(body_spacing)
 
         # === SOL BUZLU CAM KART (Dijital Saat, Tarih, Logolu QR Kod & Canlı Geri Sayım Çubuğu) ===
         left_card = FrostedGlassCard(accent_color=QColor(56, 189, 248, 95), radius=26.0)
-        body.add_card(left_card, QColor(56, 189, 248))
 
         left_box = QVBoxLayout(left_card)
         left_box.setContentsMargins(24, 16 if compact else 24, 24, 16 if compact else 24)
@@ -1989,7 +1909,6 @@ class LockScreenWindow(QMainWindow):
 
         # === SAĞ BUZLU CAM KART (Yeni Tahta Kilit Logosu + Vektörel PIN Kapsülü + Cep Telefonu Oranlı Tuş Takımı) ===
         right_card = FrostedGlassCard(accent_color=QColor(255, 94, 77, 90), radius=26.0)
-        body.add_card(right_card, QColor(255, 94, 77))
 
         right_box = QVBoxLayout(right_card)
         right_box.setContentsMargins(24, 12 if compact else 18, 24, 12 if compact else 18)
