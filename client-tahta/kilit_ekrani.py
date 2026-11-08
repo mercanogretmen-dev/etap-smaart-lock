@@ -39,24 +39,42 @@ APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
 APP_VERSION = "v1.1"
 
-SYSTEM_CONFIG_DIR = "/etc/etap-smartlock"
+# Platforma duyarlı kalıcı ayar dizinleri
+if sys.platform == "win32":
+    WIN_PROGRAMDATA = os.environ.get("ProgramData", "C:\\ProgramData")
+    WIN_APPDATA = os.environ.get("APPDATA", os.path.expanduser("~\\AppData\\Roaming"))
+    SYSTEM_CONFIG_DIR = os.path.join(WIN_PROGRAMDATA, "TahtaKilit")
+    USER_CONFIG_DIR = os.path.join(WIN_APPDATA, "TahtaKilit")
+else:
+    SYSTEM_CONFIG_DIR = "/etc/etap-smartlock"
+    USER_CONFIG_DIR = os.path.expanduser("~/.config/etap-smartlock")
+
 SYSTEM_CONFIG_PATH = os.path.join(SYSTEM_CONFIG_DIR, "config.ini")
-USER_CONFIG_DIR = os.path.expanduser("~/.config/etap-smartlock")
 USER_CONFIG_PATH = os.path.join(USER_CONFIG_DIR, "config.ini")
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOCAL_CONFIG_PATH = os.path.join(BASE_DIR, "config.ini")
+
+# PyInstaller tek parça .exe veya standart .py çalışma dizini
+if getattr(sys, "frozen", False):
+    BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    EXE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    EXE_DIR = BASE_DIR
+
+LOCAL_CONFIG_PATH = os.path.join(EXE_DIR, "config.ini")
 
 
 def get_asset_path(filename: str) -> str:
-    """Görsel ve ikon dosyalarının tam yolunu döner."""
+    """Görsel ve ikon dosyalarının tam yolunu döner (PyInstaller, Pardus /opt ve Windows uyumlu)."""
     candidates = [
         os.path.join(BASE_DIR, "assets", filename),
+        os.path.join(EXE_DIR, "assets", filename),
         os.path.join("/opt/etap-smartlock/assets", filename),
+        os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Tahta Kilit", "assets", filename) if sys.platform == "win32" else "",
     ]
     for c in candidates:
-        if os.path.exists(c):
+        if c and os.path.exists(c):
             return c
-    return candidates[0]
+    return os.path.join(BASE_DIR, "assets", filename)
 
 
 def get_config_search_paths():
@@ -807,11 +825,11 @@ class SettingsOverlayWidget(QWidget):
 
         # Butonlar
         btn_box = QHBoxLayout()
-        btn_box.setSpacing(12)
+        btn_box.setSpacing(10)
 
-        btn_save = QPushButton("💾 Değişiklikleri Kaydet (Enter)")
+        btn_save = QPushButton("💾 Kaydet (Enter)")
         btn_save.setFixedHeight(42)
-        btn_save.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_save.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         btn_save.setStyleSheet("""
             QPushButton {
                 background: #10b981;
@@ -825,9 +843,25 @@ class SettingsOverlayWidget(QWidget):
         btn_save.clicked.connect(self.save_settings)
         btn_box.addWidget(btn_save, 2)
 
+        btn_update = QPushButton("🔄 Güncelle (GitHub)")
+        btn_update.setFixedHeight(42)
+        btn_update.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        btn_update.setStyleSheet("""
+            QPushButton {
+                background: #2563eb;
+                color: #ffffff;
+                border-radius: 12px;
+                border: none;
+            }
+            QPushButton:hover { background: #1d4ed8; }
+            QPushButton:pressed { background: #1e40af; }
+        """)
+        btn_update.clicked.connect(self.trigger_update)
+        btn_box.addWidget(btn_update, 2)
+
         btn_cancel = QPushButton("İptal (Esc)")
         btn_cancel.setFixedHeight(42)
-        btn_cancel.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        btn_cancel.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         btn_cancel.setStyleSheet("""
             QPushButton {
                 background: rgba(255, 255, 255, 0.08);
@@ -941,6 +975,51 @@ class SettingsOverlayWidget(QWidget):
         self.lbl_status.setText("✅ Ayarlar başarıyla kaydedildi ve uygulandı!")
         self.lbl_status.setStyleSheet("color: #34d399; font-weight: bold; border: none; background: transparent;")
         QTimer.singleShot(600, self.hide_overlay)
+
+    def trigger_update(self):
+        self.lbl_status.setText("🔄 Güncellemeler GitHub'dan çekiliyor, lütfen bekleyiniz...")
+        self.lbl_status.setStyleSheet("color: #38bdf8; font-weight: bold; border: none; background: transparent;")
+        QApplication.processEvents()
+        QTimer.singleShot(300, self._run_update_script)
+
+    def _run_update_script(self):
+        import subprocess
+        possible_scripts = []
+        if sys.platform == "win32":
+            possible_scripts = [
+                os.path.join(EXE_DIR, "guncelle.bat"),
+                os.path.join(BASE_DIR, "guncelle.bat"),
+                os.path.join(BASE_DIR, "..", "guncelle.bat"),
+                os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Tahta Kilit", "guncelle.bat"),
+            ]
+        else:
+            possible_scripts = [
+                "/usr/local/bin/tahta-kilit-guncelle",
+                "/opt/etap-smartlock/guncelle.sh",
+                os.path.join(BASE_DIR, "guncelle.sh"),
+                os.path.join(BASE_DIR, "..", "guncelle.sh"),
+            ]
+
+        found = None
+        for s in possible_scripts:
+            if s and os.path.exists(s):
+                found = s
+                break
+
+        if found:
+            try:
+                if sys.platform == "win32":
+                    subprocess.Popen(["cmd.exe", "/c", found], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                else:
+                    subprocess.Popen(["bash", found])
+                self.lbl_status.setText("🚀 Güncelleme başlatıldı, kilit ekranı yenileniyor...")
+                self.lbl_status.setStyleSheet("color: #34d399; font-weight: bold; border: none; background: transparent;")
+            except Exception as e:
+                self.lbl_status.setText(f"❌ Güncelleme başlatılamadı: {e}")
+                self.lbl_status.setStyleSheet("color: #ef4444; border: none; background: transparent;")
+        else:
+            self.lbl_status.setText("⚠️ guncelle betiği bulunamadı. Terminalden bash guncelle.sh çalıştırın.")
+            self.lbl_status.setStyleSheet("color: #f59e0b; border: none; background: transparent;")
 
 
 # -------------------------------------------------------------

@@ -1,51 +1,97 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# ETAP Akıllı Kilit & Mobil Yönetim Sistemi — Pardus ETAP Kurulum Betiği
+# 🛡️ TAHTA KİLİT — Pardus ETAP Profesyonel Sistem Kurulum Betiği
+# Geliştirici: MERCAN ROBOTİK
 # ==============================================================================
 
 set -e
 
 if [ "$EUID" -ne 0 ]; then
-  echo "❌ Lütfen bu kurulumu yönetici olarak çalıştırın: sudo bash kur_pardus.sh"
+  echo "❌ Lütfen bu kurulumu yönetici (root) olarak çalıştırın:"
+  echo "👉 sudo bash kur_pardus.sh"
   exit 1
 fi
 
-echo "🚀 Pardus ETAP Akıllı Kilit Kurulumu Başlatılıyor..."
+echo "===================================================================="
+echo "🚀 TAHTA KİLİT — Pardus ETAP Kurulumu Başlatılıyor..."
+echo "   Geliştirici: MERCAN ROBOTİK"
+echo "===================================================================="
+echo ""
 
 # 1. Gerekli Python ve Qt sistem paketlerini kur
-echo "📦 Sistem paketleri güncelleniyor ve bağımlılıklar kuruluyor..."
-apt update -y
-apt install -y python3 python3-pip python3-pyqt6 python3-qrcode python3-pil python3-websockets || {
-    echo "⚠️ PyQt6 bulunamadı, PyQt5 deneniyor..."
-    apt install -y python3-pyqt5 python3-qrcode python3-pil python3-websockets
+echo "📦 1/5: Sistem bağımlılıkları kontrol ediliyor ve kuruluyor..."
+apt update -y -qq
+apt install -y python3 python3-pip python3-pyqt6 python3-qrcode python3-pil python3-websockets 2>/dev/null || {
+    echo "⚠️ PyQt6 sistem paketi bulunamadı, pip ve PyQt5 deneniyor..."
+    apt install -y python3-pyqt5 python3-qrcode python3-pil python3-websockets 2>/dev/null || true
+    pip3 install --quiet PyQt6 qrcode pillow websockets 2>/dev/null || true
 }
 
-# 2. Kurulum dizinini hazırla
+# 2. Kurulum dizinini hazırla (/opt/etap-smartlock)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Eğer client-tahta altından çalıştırıldıysa proje kökünü bul
+if [ -d "$SCRIPT_DIR/client-tahta" ]; then
+    CLIENT_DIR="$SCRIPT_DIR/client-tahta"
+    ROOT_DIR="$SCRIPT_DIR"
+elif [ -f "$SCRIPT_DIR/kilit_ekrani.py" ]; then
+    CLIENT_DIR="$SCRIPT_DIR"
+    ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+else
+    CLIENT_DIR="$SCRIPT_DIR"
+    ROOT_DIR="$SCRIPT_DIR"
+fi
+
 INSTALL_DIR="/opt/etap-smartlock"
 SYS_CONF_DIR="/etc/etap-smartlock"
 
-echo "📁 Program dosyaları ${INSTALL_DIR} dizinine kopyalanıyor..."
+echo "📁 2/5: Program korumalı sistem dizinine kuruluyor (/opt/etap-smartlock)..."
 mkdir -p "$INSTALL_DIR"
-cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/kilit_ekrani.py"
-chmod -R 777 "$INSTALL_DIR"
-chmod 666 "$INSTALL_DIR"/config.ini 2>/dev/null || true
+mkdir -p "$INSTALL_DIR/assets"
 
-# 2.1 Kalıcı ve ortak ayar dizini oluştur (/etc/etap-smartlock)
-# Bu dizin hem ogretmen hem de etapadmin kullanıcıları tarafından yazılabilir olmalıdır
+# Dosyaları /opt altına kopyala
+cp -f "$CLIENT_DIR/kilit_ekrani.py" "$INSTALL_DIR/"
+cp -f "$CLIENT_DIR/config.ini" "$INSTALL_DIR/config.ini.default"
+if [ -f "$ROOT_DIR/guncelle.sh" ]; then
+    cp -f "$ROOT_DIR/guncelle.sh" "$INSTALL_DIR/guncelle.sh"
+    chmod 755 "$INSTALL_DIR/guncelle.sh"
+fi
+cp -rf "$CLIENT_DIR/assets"/* "$INSTALL_DIR/assets/" 2>/dev/null || true
+
+# 2.1 Güvenlik: Python Baytkodu (.pyc) Derle ve Kaynak Kod Yetkilerini Kısıtla
+echo "🔒 3/5: Kaynak kod güvenliği yapılandırılıyor (Öğrencilerin değiştirmesi engelleniyor)..."
+python3 -m compileall -q "$INSTALL_DIR" || true
+
+# Dosyaların sahibi root yapılır, normal kullanıcılar yalnızca okuyabilir/çalıştırabilir, değiştiremez!
+chown -R root:root "$INSTALL_DIR"
+chmod -R 755 "$INSTALL_DIR"
+
+# 2.2 Kalıcı ve ortak ayar dizini oluştur (/etc/etap-smartlock)
 mkdir -p "$SYS_CONF_DIR"
 chmod 777 "$SYS_CONF_DIR"
-if [ ! -f "$SYS_CONF_DIR/config.ini" ] && [ -f "$SCRIPT_DIR/config.ini" ]; then
-    cp "$SCRIPT_DIR/config.ini" "$SYS_CONF_DIR/config.ini"
+if [ ! -f "$SYS_CONF_DIR/config.ini" ] && [ -f "$CLIENT_DIR/config.ini" ]; then
+    cp "$CLIENT_DIR/config.ini" "$SYS_CONF_DIR/config.ini"
 fi
 chmod 666 "$SYS_CONF_DIR"/config.ini 2>/dev/null || true
 
-# 3. Otomatik Başlatma (Autostart) Kaydı Oluştur
-AUTOSTART_FILE="/etc/xdg/autostart/etap-smartlock.desktop"
-echo "⚙️ Otomatik başlatma yapılandırılıyor: ${AUTOSTART_FILE}"
+# 3. Sistem Komutları Oluştur (/usr/local/bin)
+cat << 'EOF' > /usr/local/bin/tahta-kilit
+#!/usr/bin/env bash
+exec /usr/bin/python3 /opt/etap-smartlock/kilit_ekrani.py "$@"
+EOF
+chmod 755 /usr/local/bin/tahta-kilit
 
-cat << 'EOF' > "$AUTOSTART_FILE"
+cat << 'EOF' > /usr/local/bin/tahta-kilit-guncelle
+#!/usr/bin/env bash
+exec bash /opt/etap-smartlock/guncelle.sh "$@"
+EOF
+chmod 755 /usr/local/bin/tahta-kilit-guncelle
+
+# 4. Otomatik Başlatma (Autostart) ve Başlat Menüsü (.desktop)
+echo "⚙️ 4/5: Başlat menüsü ve otomatik açılış yapılandırılıyor..."
+mkdir -p /etc/xdg/autostart
+mkdir -p /usr/share/applications
+
+cat << 'EOF' > /etc/xdg/autostart/tahta-kilit.desktop
 [Desktop Entry]
 Type=Application
 Name=Tahta Kilit
@@ -53,16 +99,15 @@ Comment=Etkileşimli Tahta Kilit Uygulaması (Mercan Robotik)
 Exec=/usr/bin/python3 /opt/etap-smartlock/kilit_ekrani.py
 Path=/opt/etap-smartlock
 Icon=/opt/etap-smartlock/assets/tahta_kilit_icon.png
+Terminal=false
+Categories=Utility;System;
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
 EOF
+chmod 644 /etc/xdg/autostart/tahta-kilit.desktop
 
-chmod 644 "$AUTOSTART_FILE"
-
-# 4. Masaüstü Kısayolu ve Menü Girişi
-DESKTOP_ENTRY="/usr/share/applications/etap-smartlock.desktop"
-cat << 'EOF' > "$DESKTOP_ENTRY"
+cat << 'EOF' > /usr/share/applications/tahta-kilit.desktop
 [Desktop Entry]
 Type=Application
 Name=Tahta Kilit
@@ -73,11 +118,28 @@ Icon=/opt/etap-smartlock/assets/tahta_kilit_icon.png
 Terminal=false
 Categories=Utility;System;
 EOF
+chmod 644 /usr/share/applications/tahta-kilit.desktop
 
-chmod 644 "$DESKTOP_ENTRY"
+# 5. Ev Dizinini Temizleme (Kaynak klasörün Ev Dizini'nde görünmesini gizleme)
+echo "🧹 5/5: Ev dizini temizleniyor..."
+# Eğer repo /home/*/ altında açık şekilde duruyorsa, klasör adının önüne nokta koyarak gizli yapalım
+PARENT_DIR="$(dirname "$ROOT_DIR")"
+REPO_NAME="$(basename "$ROOT_DIR")"
+if [[ "$PARENT_DIR" =~ ^/home/ ]] && [[ "$REPO_NAME" != .* ]]; then
+    HIDDEN_DIR="$PARENT_DIR/.$REPO_NAME"
+    echo "💡 '$ROOT_DIR' dizini dosya yöneticisinde kirlilik yaratmaması için gizli klasöre dönüştürülüyor -> '$HIDDEN_DIR'"
+    mv "$ROOT_DIR" "$HIDDEN_DIR" 2>/dev/null || true
+    # /opt/etap-smartlock/guncelle.sh içindeki çalışma dizinini güncelle
+    sed -i "s|$ROOT_DIR|$HIDDEN_DIR|g" "$INSTALL_DIR/guncelle.sh" 2>/dev/null || true
+fi
 
+echo ""
 echo "===================================================================="
-echo "✅ KURULUM BAŞARIYLA TAMAMLANDI!"
-echo "📌 Tahta yeniden başlatıldığında kilit ekranı otomatik olarak açılacaktır."
-echo "📌 Hemen test etmek için: python3 /opt/etap-smartlock/kilit_ekrani.py"
+echo "🎉 TEBRİKLER! TAHTA KİLİT BAŞARIYLA SİSTEME KURULDU!"
+echo "===================================================================="
+echo "✅ Program korumalı /opt/etap-smartlock dizinine kuruldu."
+echo "✅ Öğrenciler veya standart kullanıcılar kaynak kodları değiştiremez."
+echo "✅ Tahta açıldığında veya yeniden başlatıldığında otomatik açılacaktır."
+echo "✅ İstediğiniz zaman terminalden 'tahta-kilit' yazarak da çalıştırabilirsiniz."
+echo "✅ Güncellemek için terminalden 'tahta-kilit-guncelle' yazabilir veya tahtadaki ayarlardan 'Güncelle' butonuna basabilirsiniz."
 echo "===================================================================="

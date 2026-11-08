@@ -9,3 +9,8 @@ env/
 .pytest_cache/
 .vscode/
 .idea/
+build/
+dist/
+*.spec
+build_deb_tmp/
+*.deb
