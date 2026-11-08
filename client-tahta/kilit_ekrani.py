@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.1.2"
+APP_VERSION = "v1.1.3"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -1903,13 +1903,13 @@ class LockScreenWindow(QMainWindow):
         body_spacing = 22 if compact else 40
         qr_box_size = 188 if compact else 228
         clock_pt = 34 if compact else 44
-        # Cep telefonu arama tuş takımı (Phone Dialer) oranlarında daha büyük ve dengeli butonlar
-        numpad_w = 92 if compact else 112
-        numpad_h = 60 if compact else 72
-        numpad_spacing_x = 12 if compact else 16
-        numpad_spacing_y = 10 if compact else 14
-        logo_w = 215 if compact else 255
-        logo_h = 58 if compact else 72
+        # Kompakt ve zarif numaratör butonları (Kullanıcı isteğiyle küçültüldü)
+        numpad_w = 78 if compact else 90
+        numpad_h = 50 if compact else 58
+        numpad_spacing_x = 10 if compact else 14
+        numpad_spacing_y = 8 if compact else 12
+        logo_w = 205 if compact else 245
+        logo_h = 54 if compact else 66
 
         # Ana Düzen — Ambiyans Işık Küreleri (Aurora) ve Geometrik Teknoloji Desenli Arka Plan
         main_widget = AmbientBackgroundWidget()
@@ -2142,15 +2142,15 @@ class LockScreenWindow(QMainWindow):
         # Pürüzsüz Buzlu Cam PIN Kapsülü (FrostedPinCapsule)
         pin_w = numpad_w * 3 + numpad_spacing_x * 2
         self.pin_display = FrostedPinCapsule("○ ○ ○ ○")
-        self.pin_display.setFixedSize(pin_w, 48 if compact else 54)
+        self.pin_display.setFixedSize(pin_w, 42 if compact else 48)
         self.pin_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._set_pin_display_style("normal")
         right_box.addWidget(self.pin_display, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # 3. Belirgin ve Estetik Ayrım: Giriş Kapsülü ile Tuş Takımı arası
-        right_box.addSpacing(18 if compact else 26)
+        right_box.addSpacing(16 if compact else 22)
 
-        # Cep Telefonu Arama Görünümü (Phone Dialer) Oranlarında Büyük Buzlu Cam Tuş Takımı
+        # Cep Telefonu Arama Görünümü (Phone Dialer) Oranlarında Kompakt Buzlu Cam Tuş Takımı
         numpad_grid = QGridLayout()
         numpad_grid.setHorizontalSpacing(numpad_spacing_x)
         numpad_grid.setVerticalSpacing(numpad_spacing_y)
@@ -2164,13 +2164,13 @@ class LockScreenWindow(QMainWindow):
 
         for text, row, col in buttons:
             if text == "AÇ ✓":
-                btn = FrostedGlassButton(text, variant="unlock", font_pt=14 if compact else 16)
+                btn = FrostedGlassButton(text, variant="unlock", font_pt=12 if compact else 14)
                 btn.clicked.connect(self.verify_pin)
             elif text == "SİL":
-                btn = FrostedGlassButton(text, variant="clear", font_pt=14 if compact else 16)
+                btn = FrostedGlassButton(text, variant="clear", font_pt=12 if compact else 14)
                 btn.clicked.connect(self.clear_pin)
             else:
-                btn = FrostedGlassButton(text, variant="number", font_pt=23 if compact else 27)
+                btn = FrostedGlassButton(text, variant="number", font_pt=19 if compact else 22)
                 btn.clicked.connect(lambda _, t=text: self.append_pin(t))
 
             btn.setFixedSize(numpad_w, numpad_h)
