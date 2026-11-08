@@ -84,10 +84,38 @@ Windows bilgisayarlar veya öğretmen laptopları için:
 Eğer programı bilgisayardan veya akıllı tahtadan tamamen kaldırmak isterseniz:
 
 ### 🐧 Pardus ETAP'tan Tamamen Kaldırmak İçin:
-Terminalde tek bir komut çalıştırmanız yeterlidir:
+
+Bunu **Pardus Uçbirim (Terminal)** penceresine yazacaksınız. 3 farklı ve kolay yoldan birini seçebilirsiniz:
+
+#### 🌟 1. En Pratik Yol (Her Yerden Çalışan Tek Komut):
+Eğer program daha önce kurulduysa, herhangi bir klasör aramanıza gerek yoktur.
+1. Klavyeden **`Ctrl + Alt + T`** tuşlarına basarak veya sol alttaki Pardus simgesinden **"Uçbirim"**i (Terminal) açın.
+2. Açılan siyah ekrana şu komutu yazıp `Enter`'a basın:
+   ```bash
+   sudo tahta-kilit-kaldir
+   ```
+3. Yönetici şifrenizi (`etapadmin`) girin. Sistem saniyeler içinde tamamen temizlenir.
+
+---
+
+#### 📁 2. Proje Klasöründen Kaldırma:
+Uçbirim (Terminal) ekranını açın ve şu iki satırı yazıp `Enter`'a basın:
 ```bash
+cd ~/etap-smaart-lock
 sudo bash kaldir_pardus.sh
 ```
+
+---
+
+#### 🖱️ 3. Dosya Yöneticisinden (Fare ile):
+1. Pardus dosya yöneticisinde `etap-smaart-lock` klasörünün içine girin.
+2. Boş bir alana **sağ tıklayın** ve **"Burada Uçbirim Aç"** seçeneğini tıklayın.
+3. Açılan küçük siyah pencereye şunu yazıp `Enter`'a basın:
+   ```bash
+   sudo bash kaldir_pardus.sh
+   ```
+
+---
 
 **Bu kaldırma betiği neleri temizler?**
 1. Çalışan kilit ekranını sonlandırır.

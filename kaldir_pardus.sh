@@ -40,6 +40,7 @@ rm -f /home/*/.local/share/applications/tahta-kilit.desktop 2>/dev/null || true
 echo "🧹 4/6: Sistem komutları (/usr/local/bin) temizleniyor..."
 rm -f /usr/local/bin/tahta-kilit
 rm -f /usr/local/bin/tahta-kilit-guncelle
+rm -f /usr/local/bin/tahta-kilit-kaldir
 
 # 5. Program dosyalarını sil (/opt)
 echo "📁 5/6: Kurulum dizini siliniyor (/opt/etap-smartlock)..."

@@ -55,6 +55,10 @@ if [ -f "$ROOT_DIR/guncelle.sh" ]; then
     cp -f "$ROOT_DIR/guncelle.sh" "$INSTALL_DIR/guncelle.sh"
     chmod 755 "$INSTALL_DIR/guncelle.sh"
 fi
+if [ -f "$ROOT_DIR/kaldir_pardus.sh" ]; then
+    cp -f "$ROOT_DIR/kaldir_pardus.sh" "$INSTALL_DIR/kaldir_pardus.sh"
+    chmod 755 "$INSTALL_DIR/kaldir_pardus.sh"
+fi
 cp -rf "$CLIENT_DIR/assets"/* "$INSTALL_DIR/assets/" 2>/dev/null || true
 
 # 2.1 Güvenlik: Python Baytkodu (.pyc) Derle ve Kaynak Kod Yetkilerini Kısıtla
@@ -85,6 +89,12 @@ cat << 'EOF' > /usr/local/bin/tahta-kilit-guncelle
 exec bash /opt/etap-smartlock/guncelle.sh "$@"
 EOF
 chmod 755 /usr/local/bin/tahta-kilit-guncelle
+
+cat << 'EOF' > /usr/local/bin/tahta-kilit-kaldir
+#!/usr/bin/env bash
+exec bash /opt/etap-smartlock/kaldir_pardus.sh "$@"
+EOF
+chmod 755 /usr/local/bin/tahta-kilit-kaldir
 
 # 4. Otomatik Başlatma (Autostart) ve Başlat Menüsü (.desktop)
 echo "⚙️ 4/5: Başlat menüsü ve otomatik açılış yapılandırılıyor..."
