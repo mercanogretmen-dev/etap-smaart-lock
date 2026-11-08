@@ -13,5 +13,7 @@ build/
 dist/
 *.spec
 build_deb_tmp/
+backups/
+*_preview.png
 # Ana kurulum deb paketleri depoda tutulur:
 !tahta-kilit*.deb

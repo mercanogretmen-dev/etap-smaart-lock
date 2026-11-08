@@ -1,11 +1,13 @@
 {
-  "version": "v1.1.5",
+  "version": "v1.2.0",
   "app_name": "Tahta Kilit",
   "release_date": "2026-11-08",
-  "description": "Büyük ve konforlu dokunmatik tuşlar, estetik cam yansıması.",
+  "description": "Merkezi okul adı yönetimi, doğrudan yönetici doğrulama ve öğrenci deneme engeli.",
   "changelog": [
-    "Kullanıcı tercihi doğrultusunda dokunmatik tuşlar büyük ve konforlu boyutlarına geri alındı",
-    "Tuşların üst kenarlarına daha zarif cam parıltısı ve derinlik eklendi",
-    "Giriş kapsülü ve ferah bölüm aralıkları korundu"
+    "Kurum/Okul adı ayarı telefon uygulamasına (Müdür Paneli) taşındı; tek tıkla tüm okula merkezi olarak yayınlanır",
+    "Ayarlar (⚙️) butonuna basıldığında doğrudan sanal klavyeli Yönetici Doğrulama penceresi açılır (artık numaratöre önceden şifre yazma gereksinimi yoktur)",
+    "Tahta numaratöründen sabit 1234 şifresi kaldırıldı; tahta sadece 30 saniyelik dinamik TOTP veya yetkili şifresiyle açılır",
+    "Öğrenci deneme yanılma engeli (Brute-Force Koruması): 3 hatalı denemede 30 saniye, 5 hatalı denemede 3 dakika geri sayımlı tuş kilidi",
+    "Yönetici çıkış ve ayar pencerelerine tam dokunmatik harf ve rakam sanal klavyesi eklendi"
   ]
 }

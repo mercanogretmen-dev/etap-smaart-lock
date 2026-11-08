@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 import shutil
 
-VERSION = "1.1.5"
+VERSION = "1.2.0"
 PACKAGE_NAME = "tahta-kilit"
 DEB_FILENAME = f"{PACKAGE_NAME}_{VERSION}_all.deb"
 

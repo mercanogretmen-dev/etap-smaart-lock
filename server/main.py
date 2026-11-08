@@ -14,6 +14,10 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if CURRENT_DIR not in sys.path:
     sys.path.insert(0, CURRENT_DIR)
 
+DATA_DIR = os.path.join(CURRENT_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+
 try:
     import config
 except ImportError:
@@ -46,6 +50,26 @@ class BoardConnectionManager:
         self.board_status: Dict[str, str] = {}
         # board_id -> sınıf/tahta görünen adı (Örn: "9-A")
         self.board_names: Dict[str, str] = {}
+        # Merkezi Okul / Kurum Adı (Tüm bağlı tahtalara yayınlanır)
+        self.school_name: str = self.load_school_name()
+
+    def load_school_name(self) -> str:
+        if os.path.exists(SETTINGS_FILE):
+            try:
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data.get("school_name", "T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ")
+            except Exception:
+                pass
+        return "T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ"
+
+    def save_school_name(self, name: str):
+        self.school_name = name
+        try:
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump({"school_name": name}, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Ayarlar kaydedilemedi: {e}")
 
     async def connect(self, board_id: str, websocket: WebSocket, name: Optional[str] = None):
         await websocket.accept()
@@ -166,6 +190,10 @@ class BroadcastRequest(BaseModel):
     message: str
     duration_sec: int = 60  # Ekranda kaç saniye aksın
 
+class SchoolSettingsRequest(BaseModel):
+    admin_pin: str
+    school_name: str
+
 # -------------------------------------------------------------
 # 🌐 WebSocket Uç Noktası (Pardus ETAP Tahtaları Buraya Bağlanır)
 # -------------------------------------------------------------
@@ -175,11 +203,12 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Op
     initial_name = query_name or name or board_id
     await manager.connect(board_id, websocket, initial_name)
     try:
-        # Tahtaya ilk bağlantı onayı gönder
+        # Tahtaya ilk bağlantı onayı ve merkezi okul adını gönder
         await websocket.send_text(json.dumps({
             "action": "welcome",
             "board_id": board_id,
             "name": manager.board_names.get(board_id, initial_name),
+            "school_name": manager.school_name,
             "message": f"Bağlantı kuruldu: {manager.board_names.get(board_id, initial_name)}"
         }))
 
@@ -387,6 +416,43 @@ async def broadcast_announcement(req: BroadcastRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Duyuru tahtaya iletilemedi."
             )
+
+@app.get("/api/settings/school")
+async def get_school_settings():
+    """Tüm tahtalarda görüntülenen okul/kurum adını döndürür"""
+    return {
+        "success": True,
+        "school_name": manager.school_name
+    }
+
+@app.post("/api/settings/school")
+async def update_school_settings(req: SchoolSettingsRequest):
+    """Müdür tarafından kurum adını değiştirir ve tüm bağlı tahtalara anında yayınlar"""
+    if req.admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    name = req.school_name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Okul / Kurum adı boş olamaz!"
+        )
+
+    manager.save_school_name(name)
+    count = await manager.broadcast_all({
+        "action": "update_school_name",
+        "school_name": name,
+        "timestamp": time.time()
+    })
+
+    return {
+        "success": True,
+        "school_name": name,
+        "message": f"Okul adı '{name}' olarak güncellendi ve {count} bağlı tahtaya anında iletildi! 🏫"
+    }
 
 # -------------------------------------------------------------
 # 📂 Statik Dosyalar & PWA (Manifest & Service Worker)

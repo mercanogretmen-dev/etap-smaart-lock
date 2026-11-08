@@ -282,6 +282,56 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertTrue(lock2.tryLock(100), "İlk kilit serbest kaldığında yeni kilit alınabilmeli")
         lock2.unlock()
 
+    # -------------------------------------------------------------------------
+    # 6. Merkezi Kurum/Okul Adı Yönetimi ve Canlı Yayın Testi
+    # -------------------------------------------------------------------------
+    def test_06_centralized_school_settings(self):
+        """Telefondan okul adının değiştirilip bağlı tüm tahtalara yayınlandığını test eder."""
+        # 1. Mevcut okul adını çekme
+        res_get = self.client.get("/api/settings/school")
+        self.assertEqual(res_get.status_code, 200)
+        self.assertIn("school_name", res_get.json())
+
+        # 2. Yetkisiz istek denemesi
+        res_unauth = self.client.post("/api/settings/school", json={
+            "admin_pin": "wrong_pin",
+            "school_name": "Test Anadolu Lisesi"
+        })
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # 3. Boş okul adı denemesi
+        res_empty = self.client.post("/api/settings/school", json={
+            "admin_pin": config.ADMIN_PIN,
+            "school_name": "   "
+        })
+        self.assertEqual(res_empty.status_code, 400)
+
+        # 4. Canlı tahta bağlıyken güncelleme ve yayın kontrolü
+        board_id = "11-C"
+        with self.client.websocket_connect(f"/ws/board/{board_id}") as websocket:
+            # Hoş geldin mesajı içinde okul adı gelmeli
+            welcome = websocket.receive_json()
+            self.assertEqual(welcome.get("action"), "welcome")
+            self.assertIn("school_name", welcome)
+
+            # İdare telefondan okul adını günceller
+            new_name = "ŞEHİT AHMET ALAN ANADOLU LİSESİ"
+            res_update = self.client.post("/api/settings/school", json={
+                "admin_pin": config.ADMIN_PIN,
+                "school_name": new_name
+            })
+            self.assertEqual(res_update.status_code, 200)
+            self.assertEqual(res_update.json()["school_name"], new_name)
+
+            # Tahtaya WebSocket'ten update_school_name emri düşmeli
+            ws_school_msg = websocket.receive_json()
+            self.assertEqual(ws_school_msg.get("action"), "update_school_name")
+            self.assertEqual(ws_school_msg.get("school_name"), new_name)
+
+            # Tekrar GET yapıldığında yeni ad dönmeli
+            res_after = self.client.get("/api/settings/school")
+            self.assertEqual(res_after.json()["school_name"], new_name)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

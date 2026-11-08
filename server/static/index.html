@@ -175,7 +175,20 @@
           📢 Mavi Işıklı Duyuruyu Yayınla
         </button>
 
-        <div class="divider"><span>veya yönetim</span></div>
+        <div class="divider"><span>kurum ayarları</span></div>
+
+        <!-- Okul / Kurum Adı Belirleme -->
+        <div class="input-group">
+          <label for="schoolNameInput">🏫 Okul / Kurum Adı (Tüm Tahtalar):</label>
+          <input type="text" id="schoolNameInput" placeholder="Örn: Şehit Murat Akdemir Anadolu Lisesi">
+          <small class="hint">Bu ayar okuldaki tüm akıllı tahtaların üst bandındaki kurum adını tek tıkla günceller.</small>
+        </div>
+
+        <button type="button" class="btn btn-primary" onclick="sendSchoolNameUpdate()" style="margin-bottom: 8px; background: #10b981;">
+          💾 Kurum Adını Tüm Tahtalara Gönder & Kaydet
+        </button>
+
+        <div class="divider"><span>sistem temizliği</span></div>
 
         <button type="button" class="btn btn-secondary" onclick="cleanupOfflineBoards()" style="background: #334155; margin-top: 5px;">
           🗑️ Çevrimdışı Hayalet Kayıtları Temizle

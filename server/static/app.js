@@ -17,9 +17,16 @@ document.addEventListener("DOMContentLoaded", () => {
   if (savedBoard) {
     document.getElementById("customBoardInput").value = savedBoard;
   }
+  const savedAdminPin = localStorage.getItem("etap_admin_pin");
+  if (savedAdminPin && document.getElementById("adminPin")) {
+    document.getElementById("adminPin").value = savedAdminPin;
+  }
 
   // Çevrimiçi tahtaları listele
   fetchOnlineBoards();
+
+  // Merkezi okul/kurum adını yükle
+  fetchSchoolName();
 
   // Çevrimdışı TOTP sayacını başlat
   startTotpGenerator();
@@ -392,6 +399,62 @@ async function sendBroadcast() {
       document.getElementById("adminMessage").value = "";
     } else {
       showToast(data.detail || "Duyuru iletilemedi!", "error");
+    }
+  } catch (err) {
+    showToast("Sunucu hatası: " + err, "error");
+  }
+}
+
+// -------------------------------------------------------------
+// 🏫 Okul / Kurum Adı Yönetimi (Merkezi Yayın)
+// -------------------------------------------------------------
+async function fetchSchoolName() {
+  try {
+    const res = await fetch("/api/settings/school");
+    if (res.ok) {
+      const data = await res.json();
+      const input = document.getElementById("schoolNameInput");
+      if (input && data.school_name) {
+        input.value = data.school_name;
+      }
+    }
+  } catch (e) {
+    console.log("Kurum adı çekilemedi:", e);
+  }
+}
+
+async function sendSchoolNameUpdate() {
+  const adminPin = document.getElementById("adminPin").value.trim();
+  const schoolName = document.getElementById("schoolNameInput").value.trim();
+
+  if (!adminPin) {
+    showToast("Lütfen İdare Giriş Kodunu girin!", "error");
+    document.getElementById("adminPin").focus();
+    return;
+  }
+  if (!schoolName) {
+    showToast("Lütfen Okul / Kurum adını yazın!", "error");
+    return;
+  }
+
+  // Pin'i sonraki işlemler için kaydet
+  localStorage.setItem("etap_admin_pin", adminPin);
+
+  try {
+    const res = await fetch("/api/settings/school", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        admin_pin: adminPin,
+        school_name: schoolName
+      })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(data.message, "success");
+    } else {
+      showToast(data.detail || "Kurum adı güncellenemedi!", "error");
     }
   } catch (err) {
     showToast("Sunucu hatası: " + err, "error");
