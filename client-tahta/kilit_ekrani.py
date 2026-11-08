@@ -649,20 +649,21 @@ class UpdateWorkerThread(QThread):
         try:
             # 1. Aşama: GitHub Sürüm Kontrolü (%20)
             self.progress_changed.emit(20, "🌐 GitHub sunucusuna bağlanılıyor...")
-            version_url = "https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/version.json"
-            req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/1.1"})
-            remote_version = "v1.1.1"
+            cache_bust = f"?t={int(time.time())}"
+            version_url = f"https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/version.json{cache_bust}"
+            req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/1.1", "Cache-Control": "no-cache"})
+            remote_version = "v1.1.5"
             try:
                 with urllib.request.urlopen(req_ver, timeout=10) as resp:
                     v_data = json.loads(resp.read().decode("utf-8"))
-                    remote_version = v_data.get("version", "v1.1.1")
+                    remote_version = v_data.get("version", "v1.1.5")
             except Exception:
                 pass
 
             # 2. Aşama: Yeni Kodları İndirme (%50)
             self.progress_changed.emit(50, f"📥 Yeni sürüm kodları indiriliyor ({remote_version})...")
-            code_url = "https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/client-tahta/kilit_ekrani.py"
-            req_code = urllib.request.Request(code_url, headers={"User-Agent": "TahtaKilitUpdater/1.1"})
+            code_url = f"https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/client-tahta/kilit_ekrani.py{cache_bust}"
+            req_code = urllib.request.Request(code_url, headers={"User-Agent": "TahtaKilitUpdater/1.1", "Cache-Control": "no-cache"})
             with urllib.request.urlopen(req_code, timeout=15) as resp:
                 new_code = resp.read()
 

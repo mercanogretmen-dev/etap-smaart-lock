@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 import shutil
 
-VERSION = "1.1.0"
+VERSION = "1.1.5"
 PACKAGE_NAME = "tahta-kilit"
 DEB_FILENAME = f"{PACKAGE_NAME}_{VERSION}_all.deb"
 
@@ -237,6 +237,12 @@ exec bash /opt/etap-smartlock/kaldir_pardus.sh "$@"
 
         size_kb = os.path.getsize(output_deb) / 1024
         print(f"[OK] Debian paketi hazirlandi: {output_deb} ({size_kb:.1f} KB)")
+
+        # Geriye dönük uyumluluk ve tek tıkla doğrudan indirme için kopyalar oluştur
+        legacy_deb = os.path.join(BASE_DIR, "tahta-kilit_1.1.0_all.deb")
+        generic_deb = os.path.join(BASE_DIR, "tahta-kilit.deb")
+        shutil.copyfile(output_deb, legacy_deb)
+        shutil.copyfile(output_deb, generic_deb)
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

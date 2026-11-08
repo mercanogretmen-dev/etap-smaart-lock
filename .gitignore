@@ -13,6 +13,5 @@ build/
 dist/
 *.spec
 build_deb_tmp/
-# Geliştirme esnasındaki geçici deb paketleri hariç, ana kurulum paketi depoda tutulur:
-# *.deb
-!tahta-kilit_1.1.0_all.deb
+# Ana kurulum deb paketleri depoda tutulur:
+!tahta-kilit*.deb
