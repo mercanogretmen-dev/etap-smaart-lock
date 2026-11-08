@@ -143,16 +143,55 @@
       </div>
     </section>
 
-    <!-- SEKME 3: MÜDÜR / İDARE ANONS PANELİ -->
+    <!-- SEKME 3: MÜDÜR / İDARE YÖNETİM & ANONS PANELİ -->
     <section id="adminTab" class="tab-content">
-      <div class="card admin-card">
-        <h3>Müdür / İdare Duyuru Paneli</h3>
-        <p class="hint">Tahtaların en üstünde mavi ışıklı kayan bant duyurusu yayınlar.</p>
-
-        <div class="input-group">
-          <label for="adminPin">İdare Giriş Kodu:</label>
+      <!-- İdare PIN Doğrulama Girişi -->
+      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+        <div class="input-group" style="margin-bottom: 0;">
+          <label for="adminPin">🔑 İdare Giriş Kodu:</label>
           <input type="password" id="adminPin" placeholder="Örn: 9999" maxlength="8" inputmode="numeric">
+          <small class="hint">İdare ve yönetim işlemleri için gereklidir (tarayıcınızda hatırlanır).</small>
         </div>
+      </div>
+
+      <!-- KART 1: TOPLU TAHTA YÖNETİMİ -->
+      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+        <h3>⚡ Toplu Tahta Yönetimi</h3>
+        <p class="hint">Okuldaki tüm akıllı tahtaları tek dokunuşla eşzamanlı yönetin.</p>
+
+        <div class="action-buttons-grid">
+          <button type="button" class="btn btn-warning" onclick="triggerBulkAction('lock')">
+            🔒 Tüm Tahtaları Kilitle
+          </button>
+          <button type="button" class="btn btn-power" onclick="confirmBulkPoweroff()">
+            🛑 Tüm Tahtaları Kapat
+          </button>
+          <button type="button" class="btn btn-primary" onclick="triggerBulkAction('unlock')" style="background: #10b981;">
+            🔓 Tüm Tahtaları Aç
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="cleanupOfflineBoards()" style="background: #334155;">
+            🗑️ Çevrimdışıları Temizle
+          </button>
+        </div>
+      </div>
+
+      <!-- KART 2: CANLI TAHTA LİSTESİ & ANLIK EKRAN GÖRÜNTÜSÜ -->
+      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 4px;">
+          <h3 style="margin:0;">🖥️ Canlı Tahtalar & Ekran İzleme</h3>
+          <button type="button" class="btn-refresh" title="Yenile" onclick="fetchAdminFleet()">🔄 Yenile</button>
+        </div>
+        <p class="hint">Tahtanın o anki ekranını görmek için <strong>📸 Ekranı Gör</strong> butonuna dokunun.</p>
+
+        <div id="adminFleetContainer" class="fleet-grid">
+          <div style="text-align:center; padding:18px; color:#94a3b8;">Tahtalar taranıyor...</div>
+        </div>
+      </div>
+
+      <!-- KART 3: MÜDÜR DUYURU & ANONS PANELİ -->
+      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+        <h3>📢 Mavi Işıklı Kayan Duyuru</h3>
+        <p class="hint">Tahtaların en üstünde kayan LED bant duyurusu yayınlar.</p>
 
         <div class="input-group">
           <label for="adminTarget">Yayınlanacak Hedef:</label>
@@ -174,24 +213,20 @@
         <button class="btn btn-blue" onclick="sendBroadcast()">
           📢 Mavi Işıklı Duyuruyu Yayınla
         </button>
+      </div>
 
-        <div class="divider"><span>kurum ayarları</span></div>
+      <!-- KART 4: OKUL / KURUM ADI BELİRLEME -->
+      <div class="card admin-card">
+        <h3>🏫 Okul / Kurum Adı Belirleme</h3>
+        <p class="hint">Tüm akıllı tahtaların üst bandındaki kurum adını tek tıkla toplu olarak güncelleyin.</p>
 
-        <!-- Okul / Kurum Adı Belirleme -->
         <div class="input-group">
-          <label for="schoolNameInput">🏫 Okul / Kurum Adı (Tüm Tahtalar):</label>
+          <label for="schoolNameInput">Kurum Adı (Tüm Tahtalar):</label>
           <input type="text" id="schoolNameInput" placeholder="Örn: Şehit Murat Akdemir Anadolu Lisesi">
-          <small class="hint">Bu ayar okuldaki tüm akıllı tahtaların üst bandındaki kurum adını tek tıkla günceller.</small>
         </div>
 
-        <button type="button" class="btn btn-primary" onclick="sendSchoolNameUpdate()" style="margin-bottom: 8px; background: #10b981;">
+        <button type="button" class="btn btn-primary" onclick="sendSchoolNameUpdate()" style="background: #10b981;">
           💾 Kurum Adını Tüm Tahtalara Gönder & Kaydet
-        </button>
-
-        <div class="divider"><span>sistem temizliği</span></div>
-
-        <button type="button" class="btn btn-secondary" onclick="cleanupOfflineBoards()" style="background: #334155; margin-top: 5px;">
-          🗑️ Çevrimdışı Hayalet Kayıtları Temizle
         </button>
       </div>
     </section>
@@ -211,6 +246,34 @@
         <div class="modal-actions">
           <button class="btn btn-secondary" onclick="closePowerModal()">Vazgeç</button>
           <button id="modalConfirmBtn" class="btn btn-power" onclick="sendPoweroff()">Evet, Kapat</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canlı Ekran Görüntüsü Önizleme Modalı -->
+    <div id="screenshotModal" class="modal-overlay hidden">
+      <div class="modal-box modal-large">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #334155; padding-bottom:8px;">
+          <h3 id="screenshotBoardTitle" style="margin:0; font-size:1.15rem; color:#38bdf8;">📸 Canlı Ekran</h3>
+          <button class="btn-pwa-dismiss" onclick="closeScreenshotModal()" style="font-size:1.2rem;">✕</button>
+        </div>
+
+        <div id="screenshotLoading" style="padding:28px 10px; text-align:center; color:#38bdf8; font-weight:600;">
+          <div class="spinner"></div>
+          <div style="margin-top:12px;">Tahtadan anlık ekran görüntüsü alınıyor, lütfen bekleyiniz...</div>
+        </div>
+
+        <div id="screenshotImgWrapper" class="hidden">
+          <img id="screenshotImg" src="" alt="Tahta Ekranı" style="width:100%; border-radius:10px; border:1px solid #38bdf8; box-shadow:0 8px 24px rgba(0,0,0,0.5); margin-top:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:0.78rem; color:#94a3b8;">
+            <span id="screenshotTimestamp">🕒 Alındı: --:--:--</span>
+            <span style="color:#34d399; font-weight:600;">● Canlı Görüntü</span>
+          </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top:12px;">
+          <button id="btnRefreshScreenshot" class="btn btn-secondary" onclick="refreshCurrentScreenshot()">🔄 Tekrar Çek</button>
+          <button class="btn btn-primary" onclick="closeScreenshotModal()">Kapat</button>
         </div>
       </div>
     </div>

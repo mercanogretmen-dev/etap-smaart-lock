@@ -601,3 +601,120 @@ input:focus, select:focus, textarea:focus {
 .btn-pwa-dismiss:hover {
   color: #fff;
 }
+
+/* -------------------------------------------------------------
+ * 🖥️ Canlı Tahta Filosu & Ekran Görüntüsü Grid Stilleri
+ * ------------------------------------------------------------- */
+.modal-box.modal-large {
+  max-width: 580px;
+}
+
+.action-buttons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+@media (max-width: 480px) {
+  .action-buttons-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fleet-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.fleet-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 10px 14px;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.fleet-card:hover {
+  border-color: #38bdf8;
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.fleet-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fleet-name {
+  font-weight: 700;
+  color: #f8fafc;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fleet-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.fleet-status.online-unlocked {
+  color: #34d399;
+}
+
+.fleet-status.online-locked {
+  color: #f87171;
+}
+
+.fleet-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-screenshot {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 7px 13px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-screenshot:hover {
+  background: #0284c7;
+  color: #fff;
+  border-color: #0284c7;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto;
+  border: 3.5px solid rgba(56, 189, 248, 0.2);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

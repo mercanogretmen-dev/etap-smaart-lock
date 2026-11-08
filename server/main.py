@@ -1,8 +1,10 @@
+import asyncio
 import json
 import logging
 import os
 import sys
 import time
+import uuid
 from typing import Dict, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
 from fastapi.responses import FileResponse
@@ -52,6 +54,8 @@ class BoardConnectionManager:
         self.board_names: Dict[str, str] = {}
         # Merkezi Okul / Kurum Adı (Tüm bağlı tahtalara yayınlanır)
         self.school_name: str = self.load_school_name()
+        # Bekleyen ekran görüntüsü yanıtları (request_id -> asyncio.Future)
+        self.pending_screenshots: Dict[str, asyncio.Future] = {}
 
     def load_school_name(self) -> str:
         if os.path.exists(SETTINGS_FILE):
@@ -194,6 +198,13 @@ class SchoolSettingsRequest(BaseModel):
     admin_pin: str
     school_name: str
 
+class ScreenshotRequest(BaseModel):
+    board_id: str
+    admin_pin: str
+
+class BulkActionRequest(BaseModel):
+    admin_pin: str
+
 # -------------------------------------------------------------
 # 🌐 WebSocket Uç Noktası (Pardus ETAP Tahtaları Buraya Bağlanır)
 # -------------------------------------------------------------
@@ -230,6 +241,12 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Op
                             "action": "name_updated",
                             "name": new_name
                         }))
+                elif action == "screenshot_response":
+                    req_id = msg.get("request_id")
+                    if req_id and req_id in manager.pending_screenshots:
+                        future = manager.pending_screenshots.pop(req_id, None)
+                        if future and not future.done():
+                            future.set_result(msg)
                 elif action == "ping":
                     await websocket.send_text(json.dumps({"action": "pong", "time": time.time()}))
             except json.JSONDecodeError:
@@ -452,6 +469,132 @@ async def update_school_settings(req: SchoolSettingsRequest):
         "success": True,
         "school_name": name,
         "message": f"Okul adı '{name}' olarak güncellendi ve {count} bağlı tahtaya anında iletildi! 🏫"
+    }
+
+# -------------------------------------------------------------
+# 📸 Uzaktan Canlı Ekran Görüntüsü Alma API'si
+# -------------------------------------------------------------
+@app.post("/api/board/screenshot")
+async def get_board_screenshot(req: ScreenshotRequest):
+    """Müdür / İdare panelinden tahtanın canlı ekran görüntüsünü anında çeker"""
+    if req.admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    target_id = manager.find_board(req.board_id)
+    if not target_id or not manager.is_connected(target_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"'{req.board_id}' tahtası şu anda çevrimdışı! (Kilit uygulaması veya internet kapalı olabilir)"
+        )
+
+    import uuid
+    request_id = str(uuid.uuid4())[:8]
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    manager.pending_screenshots[request_id] = future
+
+    # Tahtaya ekran görüntüsü alma emri gönder
+    sent = await manager.send_to_board(target_id, {
+        "action": "take_screenshot",
+        "request_id": request_id,
+        "timestamp": time.time()
+    })
+
+    if not sent:
+        manager.pending_screenshots.pop(request_id, None)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Tahtaya ekran görüntüsü alma emri iletilemedi."
+        )
+
+    try:
+        # En fazla 7 saniye içinde tahtadan sıkıştırılmış Base64 görüntüyü bekle
+        result = await asyncio.wait_for(future, timeout=7.0)
+        return {
+            "success": True,
+            "board_id": req.board_id,
+            "name": manager.board_names.get(target_id, req.board_id),
+            "image": result.get("image"),
+            "timestamp": result.get("timestamp", time.time())
+        }
+    except asyncio.TimeoutError:
+        manager.pending_screenshots.pop(request_id, None)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Tahtadan ekran görüntüsü zamanında alınamadı (zaman aşımı)."
+        )
+
+# -------------------------------------------------------------
+# ⚡ Toplu Yönetim API'leri (Tüm Tahtaları Kilitle / Aç / Kapat)
+# -------------------------------------------------------------
+@app.post("/api/bulk/lock")
+async def bulk_lock_boards(req: BulkActionRequest):
+    """Müdür panelinden açık olan tüm tahtaları tek tıkla kilitler"""
+    if req.admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    count = await manager.broadcast_all({
+        "action": "lock",
+        "by": "admin",
+        "timestamp": time.time()
+    })
+    for b_id in manager.active_connections:
+        manager.board_status[b_id] = "locked"
+
+    return {
+        "success": True,
+        "count": count,
+        "message": f"Bağlı olan {count} adet akıllı tahta başarıyla kilitlendi! 🔒"
+    }
+
+@app.post("/api/bulk/unlock")
+async def bulk_unlock_boards(req: BulkActionRequest):
+    """Müdür panelinden tüm tahtaların kilidini topluca açar"""
+    if req.admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    count = await manager.broadcast_all({
+        "action": "unlock",
+        "by": "admin",
+        "timestamp": time.time()
+    })
+    for b_id in manager.active_connections:
+        manager.board_status[b_id] = "unlocked"
+
+    return {
+        "success": True,
+        "count": count,
+        "message": f"Bağlı olan {count} adet akıllı tahtanın kilidi başarıyla açıldı! 🔓"
+    }
+
+@app.post("/api/bulk/poweroff")
+async def bulk_poweroff_boards(req: BulkActionRequest):
+    """Müdür panelinden açık olan tüm tahtaları tamamen kapatır (shutdown)"""
+    if req.admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    count = await manager.broadcast_all({
+        "action": "poweroff",
+        "by": "admin",
+        "timestamp": time.time()
+    })
+
+    return {
+        "success": True,
+        "count": count,
+        "message": f"Bağlı olan {count} adet tahtaya kapatma (güç kesme) emri gönderildi! 🔌"
     }
 
 # -------------------------------------------------------------

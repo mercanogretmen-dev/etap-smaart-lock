@@ -332,6 +332,87 @@ class TestEtapSmartLockSystem(unittest.TestCase):
             res_after = self.client.get("/api/settings/school")
             self.assertEqual(res_after.json()["school_name"], new_name)
 
+    # -------------------------------------------------------------------------
+    # 7. Toplu Yönetim (Bulk Lock/Unlock/Poweroff) ve Canlı Ekran Görüntüsü Testi
+    # -------------------------------------------------------------------------
+    def test_07_bulk_actions_and_live_screenshot(self):
+        """Müdür panelinden toplu kilit/kapatma ve canlı ekran görüntüsü akışını doğrular."""
+        # 1. Yetkisiz toplu kilit denemesi
+        res_unauth = self.client.post("/api/bulk/lock", json={"admin_pin": "wrong"})
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # 2. İki tahta canlı bağlanır (9-A ve 10-A)
+        with self.client.websocket_connect("/ws/board/9-A") as ws1:
+            ws1.receive_json()  # welcome
+            with self.client.websocket_connect("/ws/board/10-A") as ws2:
+                ws2.receive_json()  # welcome
+
+                # 3. Toplu Kilitleme
+                res_bulk_lock = self.client.post("/api/bulk/lock", json={"admin_pin": config.ADMIN_PIN})
+                self.assertEqual(res_bulk_lock.status_code, 200)
+                self.assertEqual(res_bulk_lock.json()["count"], 2)
+
+                cmd1 = ws1.receive_json()
+                cmd2 = ws2.receive_json()
+                self.assertEqual(cmd1.get("action"), "lock")
+                self.assertEqual(cmd2.get("action"), "lock")
+
+                # 4. Toplu Kilit Açma
+                res_bulk_unlock = self.client.post("/api/bulk/unlock", json={"admin_pin": config.ADMIN_PIN})
+                self.assertEqual(res_bulk_unlock.status_code, 200)
+                self.assertEqual(res_bulk_unlock.json()["count"], 2)
+
+                cmd1 = ws1.receive_json()
+                cmd2 = ws2.receive_json()
+                self.assertEqual(cmd1.get("action"), "unlock")
+                self.assertEqual(cmd2.get("action"), "unlock")
+
+                # 5. Toplu Kapatma (Poweroff)
+                res_bulk_power = self.client.post("/api/bulk/poweroff", json={"admin_pin": config.ADMIN_PIN})
+                self.assertEqual(res_bulk_power.status_code, 200)
+                self.assertEqual(res_bulk_power.json()["count"], 2)
+
+                cmd1 = ws1.receive_json()
+                cmd2 = ws2.receive_json()
+                self.assertEqual(cmd1.get("action"), "poweroff")
+                self.assertEqual(cmd2.get("action"), "poweroff")
+
+                # 6. Canlı Ekran Görüntüsü Alma Testi
+                # Çevrimdışı tahta için 404 dönmeli
+                res_shot_offline = self.client.post("/api/board/screenshot", json={
+                    "admin_pin": config.ADMIN_PIN,
+                    "board_id": "Bilinmeyen-Tahta"
+                })
+                self.assertEqual(res_shot_offline.status_code, 404)
+
+                # Canlı bağlı 9-A tahtası için ekran görüntüsü isteği
+                orig_send = manager.send_to_board
+                async def mock_send_with_screenshot_reply(b_id, msg):
+                    if msg.get("action") == "take_screenshot":
+                        req_id = msg.get("request_id")
+                        fut = manager.pending_screenshots.get(req_id)
+                        if fut and not fut.done():
+                            fut.set_result({
+                                "action": "screenshot_response",
+                                "request_id": req_id,
+                                "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg==",
+                                "timestamp": time.time()
+                            })
+                    return await orig_send(b_id, msg)
+
+                manager.send_to_board = mock_send_with_screenshot_reply
+                try:
+                    res_shot = self.client.post("/api/board/screenshot", json={
+                        "admin_pin": config.ADMIN_PIN,
+                        "board_id": "9-A"
+                    })
+                    self.assertEqual(res_shot.status_code, 200)
+                    self.assertTrue(res_shot.json()["success"])
+                    self.assertEqual(res_shot.json()["board_id"], "9-A")
+                    self.assertIn("data:image/jpeg;base64", res_shot.json()["image"])
+                finally:
+                    manager.send_to_board = orig_send
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

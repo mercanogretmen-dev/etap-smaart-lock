@@ -51,6 +51,8 @@ function switchTab(tabName) {
   } else if (tabName === "admin") {
     document.querySelector(".tab-btn:nth-child(3)").classList.add("active");
     document.getElementById("adminTab").classList.add("active");
+    fetchAdminFleet();
+    fetchSchoolName();
   }
 
   // Kamera açıksa ve başka sekmeye geçildiyse kapat
@@ -98,6 +100,9 @@ async function fetchOnlineBoards() {
           adminTarget.appendChild(adminOpt);
         });
       }
+
+      // Canlı Filo Listesini Güncelle
+      renderAdminBoardFleet(onlineBoards);
     }
   } catch (err) {
     console.warn("Sunucuya bağlanılamadı veya çevrimdışı:", err);
@@ -459,6 +464,191 @@ async function sendSchoolNameUpdate() {
   } catch (err) {
     showToast("Sunucu hatası: " + err, "error");
   }
+}
+
+// -------------------------------------------------------------
+// 🖥️ Canlı Tahta Filosu & Uzaktan Ekran Görüntüsü
+// -------------------------------------------------------------
+let currentScreenshotBoard = null;
+
+async function fetchAdminFleet() {
+  const container = document.getElementById("adminFleetContainer");
+  if (container) {
+    container.innerHTML = '<div style="text-align:center; padding:15px; color:#38bdf8;"><div class="spinner"></div><div style="margin-top:8px;">Tahtalar taranıyor...</div></div>';
+  }
+  await fetchOnlineBoards();
+}
+
+function renderAdminBoardFleet(boards) {
+  const container = document.getElementById("adminFleetContainer");
+  if (!container) return;
+
+  if (!boards || boards.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; padding:18px; color:#94a3b8; font-size:0.88rem;">
+        ⚠️ Şu anda açık ve çevrimiçi olan akıllı tahta bulunmuyor.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = "";
+  boards.forEach(b => {
+    const isUnlocked = b.status === "unlocked";
+    const statusText = isUnlocked ? "🟢 Açık (Derste)" : "🔒 Kilitli (Beklemede)";
+    const statusClass = isUnlocked ? "online-unlocked" : "online-locked";
+    const displayName = b.name || b.id;
+
+    const card = document.createElement("div");
+    card.className = "fleet-card";
+    card.innerHTML = `
+      <div class="fleet-info">
+        <span class="fleet-name">🖥️ ${escapeHtml(displayName)}</span>
+        <span class="fleet-status ${statusClass}">${statusText}</span>
+      </div>
+      <div class="fleet-actions">
+        <button type="button" class="btn-screenshot" onclick="openScreenshotModal('${escapeHtml(b.id)}', '${escapeHtml(displayName)}')">
+          📸 Ekranı Gör
+        </button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+async function openScreenshotModal(boardId, boardName) {
+  const adminPin = document.getElementById("adminPin").value.trim();
+  if (!adminPin) {
+    showToast("Lütfen yukarıdaki İdare Giriş Kodunu giriniz!", "error");
+    document.getElementById("adminPin").focus();
+    return;
+  }
+
+  currentScreenshotBoard = { id: boardId, name: boardName };
+
+  const modal = document.getElementById("screenshotModal");
+  const title = document.getElementById("screenshotBoardTitle");
+  const loading = document.getElementById("screenshotLoading");
+  const wrapper = document.getElementById("screenshotImgWrapper");
+
+  title.textContent = `📸 ${boardName} — Canlı Ekran`;
+  loading.classList.remove("hidden");
+  wrapper.classList.add("hidden");
+  modal.classList.remove("hidden");
+
+  await requestBoardScreenshot(boardId, adminPin);
+}
+
+async function refreshCurrentScreenshot() {
+  if (!currentScreenshotBoard) return;
+  const adminPin = document.getElementById("adminPin").value.trim();
+  const loading = document.getElementById("screenshotLoading");
+  const wrapper = document.getElementById("screenshotImgWrapper");
+
+  loading.classList.remove("hidden");
+  wrapper.classList.add("hidden");
+
+  await requestBoardScreenshot(currentScreenshotBoard.id, adminPin);
+}
+
+async function requestBoardScreenshot(boardId, adminPin) {
+  const loading = document.getElementById("screenshotLoading");
+  const wrapper = document.getElementById("screenshotImgWrapper");
+  const img = document.getElementById("screenshotImg");
+  const timeEl = document.getElementById("screenshotTimestamp");
+
+  try {
+    const res = await fetch("/api/board/screenshot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ board_id: boardId, admin_pin: adminPin })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success && data.image) {
+      img.src = data.image;
+      const d = new Date(data.timestamp * 1000);
+      timeEl.textContent = `🕒 Çekilme Saati: ${d.toLocaleTimeString("tr-TR")}`;
+      loading.classList.add("hidden");
+      wrapper.classList.remove("hidden");
+    } else {
+      loading.classList.add("hidden");
+      showToast(data.detail || "Ekran görüntüsü alınamadı!", "error");
+      closeScreenshotModal();
+    }
+  } catch (err) {
+    loading.classList.add("hidden");
+    showToast("Sunucu bağlantı hatası: " + err, "error");
+    closeScreenshotModal();
+  }
+}
+
+function closeScreenshotModal() {
+  const modal = document.getElementById("screenshotModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+// -------------------------------------------------------------
+// ⚡ Toplu Yönetim Aksiyonları
+// -------------------------------------------------------------
+async function triggerBulkAction(action) {
+  const adminPin = document.getElementById("adminPin").value.trim();
+  if (!adminPin) {
+    showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
+    document.getElementById("adminPin").focus();
+    return;
+  }
+
+  const endpointMap = {
+    lock: "/api/bulk/lock",
+    unlock: "/api/bulk/unlock",
+    poweroff: "/api/bulk/poweroff"
+  };
+
+  if (action === "unlock" && !confirm("⚠️ DİKKAT: Okuldaki tüm akıllı tahtaların kilidi AÇILACAKTIR!\n\nOnaylıyor musunuz?")) {
+    return;
+  }
+
+  try {
+    const res = await fetch(endpointMap[action], {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin_pin: adminPin })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(data.message, "success");
+      fetchOnlineBoards();
+    } else {
+      showToast(data.detail || "İşlem gerçekleştirilemedi!", "error");
+    }
+  } catch (err) {
+    showToast("Sunucu hatası: " + err, "error");
+  }
+}
+
+function confirmBulkPoweroff() {
+  const adminPin = document.getElementById("adminPin").value.trim();
+  if (!adminPin) {
+    showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
+    document.getElementById("adminPin").focus();
+    return;
+  }
+
+  if (confirm("🛑 DİKKAT: Okuldaki açık olan TÜM akıllı tahtalar tamamen kapatılacaktır (shutdown)!\n\nDevam etmek istiyor musunuz?")) {
+    triggerBulkAction("poweroff");
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 // -------------------------------------------------------------

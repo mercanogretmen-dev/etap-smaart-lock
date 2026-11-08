@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.2.0"
+APP_VERSION = "v1.3.0"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -242,6 +242,22 @@ class WebSocketClientThread(QThread):
                 return True
             except Exception as e:
                 print(f"[WS] Isim gonderme hatasi: {e}")
+        return False
+
+    def send_screenshot_response(self, request_id: str, b64_img: str) -> bool:
+        """Sunucuya çekilen anlık ekran görüntüsünü (JPEG Base64) iletir."""
+        if self.ws and self.loop and self.loop.is_running():
+            try:
+                payload = json.dumps({
+                    "action": "screenshot_response",
+                    "request_id": request_id,
+                    "image": b64_img,
+                    "timestamp": time.time()
+                })
+                asyncio.run_coroutine_threadsafe(self.ws.send(payload), self.loop)
+                return True
+            except Exception as e:
+                print(f"[WS] Ekran goruntusu gonderme hatasi: {e}")
         return False
 
     def stop(self):
@@ -652,11 +668,11 @@ class UpdateWorkerThread(QThread):
             cache_bust = f"?t={int(time.time())}"
             version_url = f"https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/version.json{cache_bust}"
             req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/1.1", "Cache-Control": "no-cache"})
-            remote_version = "v1.2.0"
+            remote_version = "v1.3.0"
             try:
                 with urllib.request.urlopen(req_ver, timeout=10) as resp:
                     v_data = json.loads(resp.read().decode("utf-8"))
-                    remote_version = v_data.get("version", "v1.2.0")
+                    remote_version = v_data.get("version", "v1.3.0")
             except Exception:
                 pass
 
@@ -2882,10 +2898,39 @@ class LockScreenWindow(QMainWindow):
             self.lock_board()
         elif action == "poweroff":
             self.handle_poweroff()
+        elif action == "take_screenshot":
+            request_id = data.get("request_id", "")
+            self.capture_and_send_screenshot(request_id)
         elif action == "banner_message":
             msg = data.get("message", "")
             duration = data.get("duration_sec", 45)
             self.show_announcement(msg, duration)
+
+    def capture_and_send_screenshot(self, request_id: str):
+        """Müdür panelinin talebiyle anlık ekran görüntüsünü çeker, optimize edip gönderir."""
+        try:
+            import base64
+            from PyQt6.QtCore import QBuffer, QIODevice
+            screen = QApplication.primaryScreen()
+            if not screen:
+                return
+
+            # grabWindow(0) kök X11 penceresini çeker (arkada masaüstü açık olsa bile!)
+            pix = screen.grabWindow(0)
+            if pix.width() > 960:
+                pix = pix.scaledToWidth(960, Qt.TransformationMode.SmoothTransformation)
+
+            buf = QBuffer()
+            buf.open(QIODevice.OpenModeFlag.WriteOnly)
+            # Hafif ve hızlı JPEG formatı (~40-60 KB)
+            pix.save(buf, "JPEG", 72)
+            b64_data = "data:image/jpeg;base64," + base64.b64encode(buf.data().data()).decode("ascii")
+            buf.close()
+
+            if hasattr(self, "ws_thread") and self.ws_thread:
+                self.ws_thread.send_screenshot_response(request_id, b64_data)
+        except Exception as e:
+            print(f"[SCREENSHOT] Yakalama hatası: {e}")
 
     def update_school_name(self, new_school: str):
         """Sunucudan veya telefondan gelen merkezi okul/kurum adını uygular ve kaydeder."""
