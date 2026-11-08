@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.1.1"
+APP_VERSION = "v1.1.2"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -1707,7 +1707,7 @@ class FrostedPinCapsule(QLabel):
         txt = self.text()
         if "○" in txt or "●" in txt:
             total_dots = max(4, self.pin_length)
-            spacing = 26.0
+            spacing = 32.0 if self.width() > 300 else 28.0
             total_w = (total_dots - 1) * spacing
             start_x = self.width() / 2.0 - total_w / 2.0
             cy = self.height() / 2.0
@@ -1716,21 +1716,21 @@ class FrostedPinCapsule(QLabel):
                 cx = start_x + i * spacing
                 if i < self.pin_length:
                     # Yanan parlak mavi/mercan nokta
-                    glow = QRadialGradient(QPointF(cx, cy), 10.0)
+                    glow = QRadialGradient(QPointF(cx, cy), 12.0)
                     glow.setColorAt(0.0, QColor(56, 189, 248, 255))
                     glow.setColorAt(0.65, QColor(56, 189, 248, 190))
                     glow.setColorAt(1.0, QColor(56, 189, 248, 0))
                     painter.setPen(Qt.PenStyle.NoPen)
                     painter.setBrush(glow)
-                    painter.drawEllipse(QPointF(cx, cy), 10.0, 10.0)
+                    painter.drawEllipse(QPointF(cx, cy), 12.0, 12.0)
 
                     painter.setBrush(QColor(240, 249, 255))
-                    painter.drawEllipse(QPointF(cx, cy), 5.2, 5.2)
+                    painter.drawEllipse(QPointF(cx, cy), 5.8, 5.8)
                 else:
                     # Boş buzlu cam halka
                     painter.setBrush(QColor(255, 255, 255, 15))
-                    painter.setPen(QPen(QColor(148, 163, 184, 110), 1.5))
-                    painter.drawEllipse(QPointF(cx, cy), 5.2, 5.2)
+                    painter.setPen(QPen(QColor(148, 163, 184, 125), 1.6))
+                    painter.drawEllipse(QPointF(cx, cy), 5.8, 5.8)
         else:
             painter.setPen(QColor(252, 165, 165) if self.mode == "error" else QColor(248, 250, 252))
             painter.setFont(QFont("DejaVu Sans", 14, QFont.Weight.ExtraBold))
@@ -1904,11 +1904,12 @@ class LockScreenWindow(QMainWindow):
         qr_box_size = 188 if compact else 228
         clock_pt = 34 if compact else 44
         # Cep telefonu arama tuş takımı (Phone Dialer) oranlarında daha büyük ve dengeli butonlar
-        numpad_w = 96 if compact else 116
-        numpad_h = 66 if compact else 80
-        numpad_spacing = 12 if compact else 15
-        logo_w = 230 if compact else 270
-        logo_h = 68 if compact else 82
+        numpad_w = 92 if compact else 112
+        numpad_h = 60 if compact else 72
+        numpad_spacing_x = 12 if compact else 16
+        numpad_spacing_y = 10 if compact else 14
+        logo_w = 215 if compact else 255
+        logo_h = 58 if compact else 72
 
         # Ana Düzen — Ambiyans Işık Küreleri (Aurora) ve Geometrik Teknoloji Desenli Arka Plan
         main_widget = AmbientBackgroundWidget()
@@ -2102,8 +2103,8 @@ class LockScreenWindow(QMainWindow):
         right_card = FrostedGlassCard(accent_color=QColor(255, 94, 77, 90), radius=26.0)
 
         right_box = QVBoxLayout(right_card)
-        right_box.setContentsMargins(24, 12 if compact else 18, 24, 12 if compact else 18)
-        right_box.setSpacing(6 if compact else 9)
+        right_box.setContentsMargins(26, 16 if compact else 24, 26, 16 if compact else 24)
+        right_box.setSpacing(0)
         right_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Yeni Şeffaf Tahta Kilit Tipografi Logosu ("Interactive Board Lock" kaldırıldı)
@@ -2127,23 +2128,32 @@ class LockScreenWindow(QMainWindow):
             pin_title.setStyleSheet("color: #f1f5f9; border: none; background: transparent;")
             right_box.addWidget(pin_title, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        pin_desc = QLabel("PIN Giriniz")
-        pin_desc.setFont(QFont("DejaVu Sans", 11 if compact else 12, QFont.Weight.Bold))
-        pin_desc.setStyleSheet("color: #cbd5e1; letter-spacing: 0.6px; border: none; background: transparent;")
+        # 1. Ferah Ayrım: Logo ile PIN alanı arası
+        right_box.addSpacing(14 if compact else 20)
+
+        pin_desc = QLabel("PIN GİRİNİZ")
+        pin_desc.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.Bold))
+        pin_desc.setStyleSheet("color: #94a3b8; letter-spacing: 2px; border: none; background: transparent;")
         right_box.addWidget(pin_desc, alignment=Qt.AlignmentFlag.AlignCenter)
 
+        # 2. Küçük Ayrım: Başlık ile Kapsül arası
+        right_box.addSpacing(8 if compact else 11)
+
         # Pürüzsüz Buzlu Cam PIN Kapsülü (FrostedPinCapsule)
-        pin_w = numpad_w * 3 + numpad_spacing * 2
+        pin_w = numpad_w * 3 + numpad_spacing_x * 2
         self.pin_display = FrostedPinCapsule("○ ○ ○ ○")
-        self.pin_display.setFixedSize(pin_w, 46 if compact else 52)
+        self.pin_display.setFixedSize(pin_w, 48 if compact else 54)
         self.pin_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._set_pin_display_style("normal")
         right_box.addWidget(self.pin_display, alignment=Qt.AlignmentFlag.AlignCenter)
 
+        # 3. Belirgin ve Estetik Ayrım: Giriş Kapsülü ile Tuş Takımı arası
+        right_box.addSpacing(18 if compact else 26)
+
         # Cep Telefonu Arama Görünümü (Phone Dialer) Oranlarında Büyük Buzlu Cam Tuş Takımı
         numpad_grid = QGridLayout()
-        numpad_grid.setHorizontalSpacing(numpad_spacing + 2)
-        numpad_grid.setVerticalSpacing(numpad_spacing)
+        numpad_grid.setHorizontalSpacing(numpad_spacing_x)
+        numpad_grid.setVerticalSpacing(numpad_spacing_y)
 
         buttons = [
             ("1", 0, 0), ("2", 0, 1), ("3", 0, 2),

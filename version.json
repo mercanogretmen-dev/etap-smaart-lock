@@ -1,11 +1,12 @@
 {
-  "version": "1.1.1",
+  "version": "v1.1.2",
   "app_name": "Tahta Kilit",
   "release_date": "2026-11-08",
-  "description": "Tekil çalışma kilidi (QLockFile), çakışma önleme ve görsel güncelleme sistemi.",
+  "description": "Ferah PIN kapsülü, estetik tuş takımı oranları ve dengeli dikey boşluklar.",
   "changelog": [
-    "Tekil çalışma kilidi ile karekod titremesi ve çift pencere engellendi",
-    "Uygulama içi görsel ilerleme çubuklu güncelleme sihirbazı eklendi",
-    "Gelişmiş hata ve internet bağlantı kontrolleri"
+    "Tahta Kilit logosu, PIN giriş kapsülü ve numaratör arasındaki boşluklar orantılı ve ferah hale getirildi",
+    "Giriş alanı ile butonlar arasına modern 24px ayrım mesafesi eklendi",
+    "PIN gösterge kapsülü büyütüldü ve parlak noktaların aralığı genişletildi",
+    "Uygulama içi tek tıkla güncelleme testi için sürüm v1.1.2 yayınlandı"
   ]
 }
