@@ -1,11 +1,9 @@
 {
-  "version": "v1.1.3",
+  "version": "v1.1.4",
   "app_name": "Tahta Kilit",
   "release_date": "2026-11-08",
-  "description": "Kompakt ve estetik dokunmatik numaratör butonları.",
+  "description": "Lütfen PIN Giriniz ibaresi güncellendi.",
   "changelog": [
-    "Numaratör butonları daha zarif ve kompakt boyutlara küçültüldü",
-    "Rakam ve buton yazı tipi boyutları yeni buton oranlarına göre uyarlandı",
-    "PIN kapsülü buton genişliğiyle mükemmel hizalandı"
+    "PIN giriş başlığı 'LÜTFEN PIN GİRİNİZ' olarak güncellendi"
   ]
 }

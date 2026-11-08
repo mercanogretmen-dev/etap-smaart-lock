@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.1.3"
+APP_VERSION = "v1.1.4"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -2131,9 +2131,9 @@ class LockScreenWindow(QMainWindow):
         # 1. Ferah Ayrım: Logo ile PIN alanı arası
         right_box.addSpacing(14 if compact else 20)
 
-        pin_desc = QLabel("PIN GİRİNİZ")
+        pin_desc = QLabel("LÜTFEN PIN GİRİNİZ")
         pin_desc.setFont(QFont("DejaVu Sans", 10 if compact else 11, QFont.Weight.Bold))
-        pin_desc.setStyleSheet("color: #94a3b8; letter-spacing: 2px; border: none; background: transparent;")
+        pin_desc.setStyleSheet("color: #94a3b8; letter-spacing: 1.8px; border: none; background: transparent;")
         right_box.addWidget(pin_desc, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # 2. Küçük Ayrım: Başlık ile Kapsül arası
