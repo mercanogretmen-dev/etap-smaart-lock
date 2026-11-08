@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.1.4"
+APP_VERSION = "v1.1.5"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -1764,10 +1764,10 @@ class FrostedGlassButton(QPushButton):
 
         rect = QRectF(1.5, 1.5, self.width() - 3.0, self.height() - 3.0)
         if self.variant == "header":
-            radius = 5.0
+            radius = 6.0
         else:
-            # Cep telefonu arama tuş takımı (Phone Dialer) oranlarında yumuşak kavis
-            radius = min(rect.width(), rect.height()) * 0.35
+            # Cep telefonu arama tuş takımı oranlarında pürüzsüz kavis
+            radius = min(rect.width(), rect.height()) * 0.32
         path = QPainterPath()
         path.addRoundedRect(rect, radius, radius)
 
@@ -1777,27 +1777,27 @@ class FrostedGlassButton(QPushButton):
         fill_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
         if self.variant == "unlock":
             if pressed:
-                fill_grad.setColorAt(0.0, QColor(16, 185, 129, 140))
-                fill_grad.setColorAt(1.0, QColor(5, 150, 105, 160))
+                fill_grad.setColorAt(0.0, QColor(16, 185, 129, 160))
+                fill_grad.setColorAt(1.0, QColor(5, 150, 105, 180))
             elif self.hovered:
-                fill_grad.setColorAt(0.0, QColor(52, 211, 153, 90))
-                fill_grad.setColorAt(1.0, QColor(16, 185, 129, 60))
+                fill_grad.setColorAt(0.0, QColor(52, 211, 153, 95))
+                fill_grad.setColorAt(1.0, QColor(16, 185, 129, 65))
             else:
-                fill_grad.setColorAt(0.0, QColor(52, 211, 153, 58))
-                fill_grad.setColorAt(1.0, QColor(16, 185, 129, 32))
-            border_color = QColor(110, 231, 183, 140 if self.hovered else 105)
+                fill_grad.setColorAt(0.0, QColor(52, 211, 153, 62))
+                fill_grad.setColorAt(1.0, QColor(16, 185, 129, 36))
+            border_color = QColor(110, 231, 183, 140 if self.hovered else 110)
             text_color = QColor(236, 253, 245)
         elif self.variant == "clear":
             if pressed:
-                fill_grad.setColorAt(0.0, QColor(244, 63, 94, 140))
-                fill_grad.setColorAt(1.0, QColor(225, 29, 72, 160))
+                fill_grad.setColorAt(0.0, QColor(244, 63, 94, 160))
+                fill_grad.setColorAt(1.0, QColor(225, 29, 72, 180))
             elif self.hovered:
-                fill_grad.setColorAt(0.0, QColor(251, 113, 133, 88))
-                fill_grad.setColorAt(1.0, QColor(244, 63, 94, 56))
+                fill_grad.setColorAt(0.0, QColor(251, 113, 133, 95))
+                fill_grad.setColorAt(1.0, QColor(244, 63, 94, 60))
             else:
-                fill_grad.setColorAt(0.0, QColor(255, 94, 77, 54))
-                fill_grad.setColorAt(1.0, QColor(225, 29, 72, 30))
-            border_color = QColor(253, 164, 175, 135 if self.hovered else 98)
+                fill_grad.setColorAt(0.0, QColor(255, 94, 77, 60))
+                fill_grad.setColorAt(1.0, QColor(225, 29, 72, 34))
+            border_color = QColor(253, 164, 175, 140 if self.hovered else 100)
             text_color = QColor(255, 241, 242)
         elif self.variant == "header":
             if pressed or self.hovered:
@@ -1811,26 +1811,27 @@ class FrostedGlassButton(QPushButton):
             text_color = QColor(226, 232, 240)
         else:
             if pressed:
-                fill_grad.setColorAt(0.0, QColor(56, 189, 248, 120))
-                fill_grad.setColorAt(1.0, QColor(14, 165, 233, 85))
-                border_color = QColor(125, 211, 252, 190)
+                fill_grad.setColorAt(0.0, QColor(56, 189, 248, 130))
+                fill_grad.setColorAt(1.0, QColor(14, 165, 233, 95))
+                border_color = QColor(125, 211, 252, 210)
             elif self.hovered:
-                fill_grad.setColorAt(0.0, QColor(255, 255, 255, 48))
-                fill_grad.setColorAt(1.0, QColor(56, 189, 248, 28))
-                border_color = QColor(125, 211, 252, 130)
+                fill_grad.setColorAt(0.0, QColor(255, 255, 255, 52))
+                fill_grad.setColorAt(1.0, QColor(56, 189, 248, 30))
+                border_color = QColor(125, 211, 252, 140)
             else:
-                fill_grad.setColorAt(0.0, QColor(255, 255, 255, 28))
-                fill_grad.setColorAt(1.0, QColor(255, 255, 255, 11))
-                border_color = QColor(255, 255, 255, 62)
+                fill_grad.setColorAt(0.0, QColor(255, 255, 255, 30))
+                fill_grad.setColorAt(1.0, QColor(255, 255, 255, 12))
+                border_color = QColor(255, 255, 255, 65)
             text_color = QColor(248, 250, 252)
 
         painter.fillPath(path, fill_grad)
 
-        # Üst İnce Cam Parıltısı
+        # Üst İnce Cam Parıltısı (Specular highlight)
         shine = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        shine.setColorAt(0.0, border_color)
-        shine.setColorAt(1.0, QColor(border_color.red(), border_color.green(), border_color.blue(), 26))
-        painter.setPen(QPen(QBrush(shine), 1.35))
+        shine.setColorAt(0.0, QColor(border_color.red(), border_color.green(), border_color.blue(), 130))
+        shine.setColorAt(0.5, QColor(border_color.red(), border_color.green(), border_color.blue(), 60))
+        shine.setColorAt(1.0, QColor(border_color.red(), border_color.green(), border_color.blue(), 20))
+        painter.setPen(QPen(QBrush(shine), 1.4))
         painter.drawPath(path)
 
         # Metin Çizimi
@@ -1903,13 +1904,13 @@ class LockScreenWindow(QMainWindow):
         body_spacing = 22 if compact else 40
         qr_box_size = 188 if compact else 228
         clock_pt = 34 if compact else 44
-        # Kompakt ve zarif numaratör butonları (Kullanıcı isteğiyle küçültüldü)
-        numpad_w = 78 if compact else 90
-        numpad_h = 50 if compact else 58
-        numpad_spacing_x = 10 if compact else 14
-        numpad_spacing_y = 8 if compact else 12
-        logo_w = 205 if compact else 245
-        logo_h = 54 if compact else 66
+        # Konforlu, dokunmatik dostu büyük buton oranları (Phone Dialer)
+        numpad_w = 94 if compact else 114
+        numpad_h = 62 if compact else 76
+        numpad_spacing_x = 12 if compact else 16
+        numpad_spacing_y = 10 if compact else 13
+        logo_w = 220 if compact else 260
+        logo_h = 60 if compact else 74
 
         # Ana Düzen — Ambiyans Işık Küreleri (Aurora) ve Geometrik Teknoloji Desenli Arka Plan
         main_widget = AmbientBackgroundWidget()
@@ -2142,15 +2143,15 @@ class LockScreenWindow(QMainWindow):
         # Pürüzsüz Buzlu Cam PIN Kapsülü (FrostedPinCapsule)
         pin_w = numpad_w * 3 + numpad_spacing_x * 2
         self.pin_display = FrostedPinCapsule("○ ○ ○ ○")
-        self.pin_display.setFixedSize(pin_w, 42 if compact else 48)
+        self.pin_display.setFixedSize(pin_w, 48 if compact else 54)
         self.pin_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._set_pin_display_style("normal")
         right_box.addWidget(self.pin_display, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # 3. Belirgin ve Estetik Ayrım: Giriş Kapsülü ile Tuş Takımı arası
-        right_box.addSpacing(16 if compact else 22)
+        right_box.addSpacing(18 if compact else 24)
 
-        # Cep Telefonu Arama Görünümü (Phone Dialer) Oranlarında Kompakt Buzlu Cam Tuş Takımı
+        # Cep Telefonu Arama Görünümü (Phone Dialer) Oranlarında Geniş Buzlu Cam Tuş Takımı
         numpad_grid = QGridLayout()
         numpad_grid.setHorizontalSpacing(numpad_spacing_x)
         numpad_grid.setVerticalSpacing(numpad_spacing_y)
@@ -2164,13 +2165,13 @@ class LockScreenWindow(QMainWindow):
 
         for text, row, col in buttons:
             if text == "AÇ ✓":
-                btn = FrostedGlassButton(text, variant="unlock", font_pt=12 if compact else 14)
+                btn = FrostedGlassButton(text, variant="unlock", font_pt=14 if compact else 16)
                 btn.clicked.connect(self.verify_pin)
             elif text == "SİL":
-                btn = FrostedGlassButton(text, variant="clear", font_pt=12 if compact else 14)
+                btn = FrostedGlassButton(text, variant="clear", font_pt=14 if compact else 16)
                 btn.clicked.connect(self.clear_pin)
             else:
-                btn = FrostedGlassButton(text, variant="number", font_pt=19 if compact else 22)
+                btn = FrostedGlassButton(text, variant="number", font_pt=23 if compact else 26)
                 btn.clicked.connect(lambda _, t=text: self.append_pin(t))
 
             btn.setFixedSize(numpad_w, numpad_h)

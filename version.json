@@ -1,9 +1,11 @@
 {
-  "version": "v1.1.4",
+  "version": "v1.1.5",
   "app_name": "Tahta Kilit",
   "release_date": "2026-11-08",
-  "description": "Lütfen PIN Giriniz ibaresi güncellendi.",
+  "description": "Büyük ve konforlu dokunmatik tuşlar, estetik cam yansıması.",
   "changelog": [
-    "PIN giriş başlığı 'LÜTFEN PIN GİRİNİZ' olarak güncellendi"
+    "Kullanıcı tercihi doğrultusunda dokunmatik tuşlar büyük ve konforlu boyutlarına geri alındı",
+    "Tuşların üst kenarlarına daha zarif cam parıltısı ve derinlik eklendi",
+    "Giriş kapsülü ve ferah bölüm aralıkları korundu"
   ]
 }
