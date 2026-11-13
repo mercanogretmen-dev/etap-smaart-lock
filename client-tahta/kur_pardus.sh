@@ -75,6 +75,9 @@ chmod 777 "$SYS_CONF_DIR"
 if [ ! -f "$SYS_CONF_DIR/config.ini" ] && [ -f "$CLIENT_DIR/config.ini" ]; then
     cp "$CLIENT_DIR/config.ini" "$SYS_CONF_DIR/config.ini"
 fi
+if [ -f "$SYS_CONF_DIR/config.ini" ]; then
+    sed -i 's/^cihaz_id = etap-57435795.*/cihaz_id = /g' "$SYS_CONF_DIR/config.ini" 2>/dev/null || true
+fi
 chmod 666 "$SYS_CONF_DIR"/config.ini 2>/dev/null || true
 
 # 3. Sistem Komutları Oluştur (/usr/local/bin)

@@ -1,13 +1,13 @@
 {
-  "version": "v1.3.0",
+  "version": "v1.3.1",
   "app_name": "Tahta Kilit",
-  "release_date": "2026-11-08",
-  "description": "Uzaktan canlı ekran görüntüsü alma ve tek tıkla toplu tahta yönetimi.",
+  "release_date": "2026-11-13",
+  "description": "Klon İmaj & Çakışan Cihaz ID Koruması (Anti-Cloning Hardware Fingerprint) ve Akıllı Tahta Ayrımı.",
   "changelog": [
-    "Müdür / İdare Paneline uzaktan canlı ekran görüntüsü alma özelliği eklendi (📸 Ekranı Gör butonu ile tahta ekranı anında telefona gelir)",
-    "Tek tıkla Toplu Kilitleme (🔒 Tüm Tahtaları Kilitle) özelliği eklendi",
-    "Tek tıkla Toplu Kapatma (🛑 Tüm Tahtaları Kapat - Güç Kes) özelliği eklendi",
-    "Tek tıkla Toplu Kilit Açma (🔓 Tüm Tahtaları Aç) özelliği eklendi",
-    "Müdür panelinde okuldaki tüm tahtaların anlık açık/kilitli durumunu gösteren Canlı Filo Panosu eklendi"
+    "Klon İmaj Koruması (Anti-Cloning): Aynı Pardus ETAP disk imajı (Clonezilla/DD) birden fazla tahtaya yüklendiğinde, her tahtanın fiziksel ağ kartı (MAC) ve BIOS donanım parmak izi otomatik algılanarak her tahtaya benzersiz bir Cihaz ID atanır.",
+    "Eski sürümlerden veya kalıp imajdan kalan çakışan 'etap-57435795' kimliği otomatik tespit edilip temizlenir ve donanıma özel yeni kimlikle güncellenir.",
+    "Tahta Kilit Ayarlar penceresine fiziksel 'Cihaz Kimliği' bilgisi ve gerektiğinde tek tıkla yeni kimlik üreten '🔄 Kimliği Yenile' butonu eklendi.",
+    "Debian (.deb) paket şablonundaki sabit cihaz ID kaldırıldı, ilk kurulumda temiz donanım algılaması sağlandı.",
+    "Uzaktan canlı ekran görüntüsü alma (📸 Ekranı Gör) ve tek tıkla toplu tahta yönetimi (🔒 Kilitle, 🔓 Aç, 🛑 Kapat)."
   ]
 }

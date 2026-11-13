@@ -413,6 +413,64 @@ class TestEtapSmartLockSystem(unittest.TestCase):
                 finally:
                     manager.send_to_board = orig_send
 
+    # -------------------------------------------------------------------------
+    # 8. Donanım Parmak İzi & Klon Koruma (Anti-Cloning) Testi
+    # -------------------------------------------------------------------------
+    def test_08_hardware_id_generation_and_anti_clone(self):
+        """Klon imajlarda benzersiz ID üretimini ve çakışma korumasını doğrular."""
+        import configparser
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "kilit_ekrani",
+            os.path.join(PROJECT_ROOT, "client-tahta", "kilit_ekrani.py")
+        )
+        mod_kilit = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod_kilit)
+
+        # Test esnasında yerel disk dosyalarını kirletmemek için save_config'i mock'la
+        orig_save = mod_kilit.save_config
+        mod_kilit.save_config = lambda c: True
+
+        try:
+            get_hardware_fingerprint_info = mod_kilit.get_hardware_fingerprint_info
+            get_device_id = mod_kilit.get_device_id
+            BLACKLISTED_DEVICE_IDS = mod_kilit.BLACKLISTED_DEVICE_IDS
+
+            # 1. Donanım parmak izi fonksiyonu format kontrolü
+            curr_id, elements, sig_hash = get_hardware_fingerprint_info()
+            self.assertTrue(curr_id.startswith("etap-"))
+            self.assertEqual(len(curr_id), 13)  # 'etap-' (5) + 8 hex hanesi
+            self.assertTrue(len(elements) > 0)
+            self.assertEqual(len(sig_hash), 64)
+
+            # 2. Kara listedeki 'etap-57435795' kimliğinin otomatik temizlenmesi
+            cfg_blacklisted = configparser.ConfigParser()
+            cfg_blacklisted.add_section("GENEL")
+            cfg_blacklisted.set("GENEL", "cihaz_id", "etap-57435795")
+            clean_id = get_device_id(cfg_blacklisted)
+            self.assertNotIn(clean_id, BLACKLISTED_DEVICE_IDS)
+            self.assertEqual(clean_id, curr_id)
+            self.assertEqual(cfg_blacklisted.get("GENEL", "cihaz_id"), curr_id)
+            self.assertTrue(len(cfg_blacklisted.get("GENEL", "hardware_elements")) > 0)
+
+            # 3. Aynı tahtada kalıcılık (Değişmeme) testi
+            persisted_id = get_device_id(cfg_blacklisted)
+            self.assertEqual(persisted_id, clean_id)
+
+            # 4. Klonlama tespiti (Başka bir fiziksel tahtadan alınan imaj)
+            cfg_cloned = configparser.ConfigParser()
+            cfg_cloned.add_section("GENEL")
+            cfg_cloned.set("GENEL", "cihaz_id", "etap-aabbccdd")
+            cfg_cloned.set("GENEL", "hardware_elements", "MAC:eth0:00:11:22:33:44:55,DMI:FAKE-OTHER-BOARD")
+
+            healed_id = get_device_id(cfg_cloned)
+            self.assertNotEqual(healed_id, "etap-aabbccdd", "Klon imaj eski tahtanın ID'sini taşımamalı!")
+            self.assertEqual(healed_id, curr_id, "Klon imaj bu tahtanın kendi donanım ID'sini almalı!")
+            self.assertEqual(cfg_cloned.get("GENEL", "cihaz_id"), curr_id)
+        finally:
+            mod_kilit.save_config = orig_save
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

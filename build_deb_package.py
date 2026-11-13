@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 import shutil
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 PACKAGE_NAME = "tahta-kilit"
 DEB_FILENAME = f"{PACKAGE_NAME}_{VERSION}_all.deb"
 
@@ -85,10 +85,13 @@ rm -f /home/*/.config/autostart/etap-smartlock.desktop 2>/dev/null || true
 rm -rf /home/*/.cache/sessions/* 2>/dev/null || true
 rm -f /tmp/tahta_kilit_*.lock /tmp/tahta_kilit*.lock 2>/dev/null || true
 
-# Kalıcı ayar dosyası oluştur
+# Kalıcı ayar dosyası oluştur veya eski çakışan ID'yi temizle
 mkdir -p /etc/etap-smartlock
 if [ ! -f /etc/etap-smartlock/config.ini ] && [ -f /opt/etap-smartlock/config.ini.default ]; then
     cp /opt/etap-smartlock/config.ini.default /etc/etap-smartlock/config.ini
+fi
+if [ -f /etc/etap-smartlock/config.ini ]; then
+    sed -i 's/^cihaz_id = etap-57435795.*/cihaz_id = /g' /etc/etap-smartlock/config.ini 2>/dev/null || true
     chmod 666 /etc/etap-smartlock/config.ini 2>/dev/null || true
 fi
 

@@ -13,6 +13,8 @@ import time
 import json
 import configparser
 import asyncio
+import hashlib
+import uuid
 from datetime import datetime
 import qrcode
 from PIL import Image, ImageDraw
@@ -37,7 +39,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.3.0"
+APP_VERSION = "v1.3.1"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -109,7 +111,8 @@ def load_config():
         "sunucu_ws_url": "wss://etap-smaart-lock.onrender.com/ws/board/",
         "ogretmen_pin": "1234",
         "yonetici_sifre": "admin123",
-        "cihaz_id": ""
+        "cihaz_id": "",
+        "hardware_elements": ""
     }
     for k, v in defaults.items():
         if k not in config["GENEL"] or not str(config["GENEL"][k]).strip():
@@ -118,30 +121,152 @@ def load_config():
     return config
 
 
-def get_device_id(config):
-    """Her tahta için benzersiz ve kalıcı donanım/cihaz kimliğini döner."""
-    dev_id = config.get("GENEL", "cihaz_id", fallback="").strip()
-    if dev_id:
-        return dev_id
+# -------------------------------------------------------------
+# 🛡️ Donanım Tabanlı Kimlik ve Klon Koruma (Anti-Cloning)
+# -------------------------------------------------------------
+BLACKLISTED_DEVICE_IDS = {"etap-57435795"}
 
-    for mid_file in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
-        if os.path.exists(mid_file):
+
+def get_hardware_fingerprint_info():
+    """
+    Fiziksel donanıma özgü (disk klonlansa bile her tahtada farklı olan) bileşenleri toplar:
+    1. Fiziksel Ağ Arayüzleri (MAC adresleri) - Gerçek PCI/USB aygıtları öncelikli
+    2. Python uuid.getnode (Sistem 48-bit MAC donanım adresi)
+    3. BIOS / Anakart UUID ve Seri Numaraları (Linux DMI sysfs)
+    4. Windows MachineGuid (Windows test ortamları için)
+    
+    Dönüş:
+    (primary_dev_id, list_of_hardware_elements, signature_hash)
+    """
+    elements = []
+    macs = []
+
+    # 1. Linux sysfs: Gerçek fiziksel ağ kartlarının MAC adresleri (/sys/class/net/*)
+    net_dir = "/sys/class/net"
+    if os.path.isdir(net_dir):
+        try:
+            for iface in sorted(os.listdir(net_dir)):
+                # Sanal ve döngüsel ağ kartlarını atla
+                if iface.startswith(("lo", "docker", "veth", "br-", "virbr", "tun", "tap", "wg", "dummy")):
+                    continue
+                iface_dir = os.path.join(net_dir, iface)
+                addr_file = os.path.join(iface_dir, "address")
+                if os.path.isfile(addr_file):
+                    try:
+                        with open(addr_file, "r", encoding="utf-8") as f:
+                            mac = f.read().strip().lower()
+                        if mac and mac not in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff") and len(mac.split(":")) == 6:
+                            # 'device' symlink varsa bu gerçek bir anakart/PCI/USB aygıtıdır
+                            is_phys = os.path.exists(os.path.join(iface_dir, "device"))
+                            elements.append(f"MAC:{iface}:{mac}")
+                            macs.append((is_phys, iface, mac))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # 2. Standart uuid.getnode (Platformlar arası kararlı MAC)
+    try:
+        node = uuid.getnode()
+        node_mac = ':'.join(f'{(node >> i) & 0xff:02x}' for i in range(40, -8, -8)).lower()
+        if node_mac and node_mac not in ("00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff"):
+            elements.append(f"NODE_MAC:{node_mac}")
+            if not macs:
+                macs.append((True, "node", node_mac))
+    except Exception:
+        pass
+
+    # 3. Linux DMI / BIOS / Anakart Seri No ve UUID (Pardus ETAP)
+    dmi_files = [
+        ("dmi_uuid", "/sys/class/dmi/id/product_uuid"),
+        ("dmi_prod_serial", "/sys/class/dmi/id/product_serial"),
+        ("dmi_board_serial", "/sys/class/dmi/id/board_serial")
+    ]
+    for key, path in dmi_files:
+        if os.path.isfile(path):
             try:
-                with open(mid_file, "r") as f:
-                    content = f.read().strip()
-                    if content:
-                        dev_id = f"etap-{content[:8]}"
-                        break
+                with open(path, "r", encoding="utf-8") as f:
+                    val = f.read().strip()
+                if val and val.lower() not in ("none", "default string", "to be filled by o.e.m.", "0", "empty"):
+                    elements.append(f"{key}:{val}")
             except Exception:
                 pass
 
-    if not dev_id:
-        import uuid
-        dev_id = f"etap-{uuid.uuid4().hex[:8]}"
+    # 4. Windows MachineGuid (Windows geliştirme ortamı testi için)
+    if sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as k:
+                guid, _ = winreg.QueryValueEx(k, "MachineGuid")
+                if guid:
+                    elements.append(f"WIN_GUID:{guid}")
+        except Exception:
+            pass
 
-    config.set("GENEL", "cihaz_id", dev_id)
-    save_config(config)
-    return dev_id
+    # Öncelikli donanım belirteci: Gerçek fiziksel donanım MAC adresi
+    macs.sort(key=lambda x: (not x[0], x[1]))
+    if macs:
+        primary_token = macs[0][2]
+    elif elements:
+        primary_token = elements[0]
+    else:
+        # Son çare: Rastgele kalıcı token
+        primary_token = str(uuid.uuid4())
+        elements.append(f"FALLBACK:{primary_token}")
+
+    full_signature = "|".join(elements)
+    sig_hash = hashlib.sha256(full_signature.encode("utf-8")).hexdigest()
+    dev_hash = hashlib.sha256(f"ETAP-{primary_token}".encode("utf-8")).hexdigest()[:8]
+    dev_id = f"etap-{dev_hash}"
+
+    return dev_id, elements, sig_hash
+
+
+def get_device_id(config, force_regenerate=False):
+    """
+    Her tahta için fiziksel donanıma bağlı, benzersiz ve kalıcı cihaz kimliğini döner.
+    
+    🛡️ Klon Koruma (Anti-Cloning):
+    - Aynı disk imajı 50 tahtaya klonlansa bile, her tahtanın fiziksel ağ kartı (MAC)
+      farklı olduğu için klonlama anında tespit edilir ve tahtaya benzersiz yeni bir ID atanır.
+    - Eski sürümlerden veya imajdan kalan çakışan 'etap-57435795' ID'si anında temizlenir ve yenilenir.
+    """
+    if "GENEL" not in config:
+        config["GENEL"] = {}
+
+    curr_id, elements, curr_sig_hash = get_hardware_fingerprint_info()
+    saved_id = config.get("GENEL", "cihaz_id", fallback="").strip()
+    saved_hw_elements = config.get("GENEL", "hardware_elements", fallback="").strip()
+
+    # 1. Eski çakışan ID kontrolü veya boş ID
+    is_blacklisted = (saved_id in BLACKLISTED_DEVICE_IDS) or (not saved_id)
+
+    # 2. Klonlama tespiti:
+    # Kayıtlı bir donanım listesi varsa ve mevcut donanımların HİÇBİRİ ile eşleşmiyorsa,
+    # bu disk imajı başka bir fiziksel tahtaya klonlanmış demektir!
+    is_clone_detected = False
+    if saved_hw_elements and not is_blacklisted and not force_regenerate:
+        saved_elem_set = set(e.strip() for e in saved_hw_elements.split(",") if e.strip())
+        curr_elem_set = set(elements)
+        if not (saved_elem_set & curr_elem_set):
+            is_clone_detected = True
+            print(f"[ANTI-CLONE] ⚠️ Klon disk imajı tespit edildi! Eski Tahta ID: '{saved_id}' iptal ediliyor.")
+
+    if is_blacklisted or is_clone_detected or force_regenerate:
+        final_id = curr_id
+        config.set("GENEL", "cihaz_id", final_id)
+        config.set("GENEL", "hardware_elements", ",".join(elements))
+        save_config(config)
+        print(f"[DONANIM] Benzersiz cihaz kimliği oluşturuldu ve kaydedildi: {final_id}")
+        return final_id
+
+    # Normal durum: Aynı fiziksel tahtada yeniden başlatma
+    # hardware_elements henüz yazılmamışsa kaydet
+    if not saved_hw_elements:
+        config.set("GENEL", "hardware_elements", ",".join(elements))
+        save_config(config)
+
+    return saved_id
 
 
 def save_config(config):
@@ -668,11 +793,11 @@ class UpdateWorkerThread(QThread):
             cache_bust = f"?t={int(time.time())}"
             version_url = f"https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/version.json{cache_bust}"
             req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/1.1", "Cache-Control": "no-cache"})
-            remote_version = "v1.3.0"
+            remote_version = "v1.3.1"
             try:
                 with urllib.request.urlopen(req_ver, timeout=10) as resp:
                     v_data = json.loads(resp.read().decode("utf-8"))
-                    remote_version = v_data.get("version", "v1.3.0")
+                    remote_version = v_data.get("version", "v1.3.1")
             except Exception:
                 pass
 
@@ -927,6 +1052,29 @@ class SettingsOverlayWidget(QWidget):
         kb_layout.addLayout(action_row)
         card_layout.addWidget(kb_frame)
 
+        # Cihaz ID ve Donanım Bilgisi (Klon Korumalı Benzersiz Kimlik)
+        hw_info_box = QHBoxLayout()
+        hw_info_box.setSpacing(8)
+        self.lbl_dev_info = QLabel(f"🆔 Cihaz Kimliği: {self.lock_window.cihaz_id} (Fiziksel Donanıma Özgü)")
+        self.lbl_dev_info.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        self.lbl_dev_info.setStyleSheet("color: #38bdf8; border: none; background: transparent;")
+        hw_info_box.addWidget(self.lbl_dev_info, 1)
+
+        self.btn_regen_id = QPushButton("🔄 Kimliği Yenile")
+        self.btn_regen_id.setFixedHeight(28)
+        self.btn_regen_id.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        self.btn_regen_id.setStyleSheet("""
+            QPushButton {
+                background: rgba(56, 189, 248, 0.15); color: #38bdf8;
+                border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 6px; padding: 0 8px;
+            }
+            QPushButton:hover { background: #38bdf8; color: #0f172a; }
+        """)
+        self.btn_regen_id.setToolTip("Tahtanın fiziksel ağ kartını yeniden tarayarak benzersiz yeni bir ID üretir.")
+        self.btn_regen_id.clicked.connect(self.regenerate_device_id)
+        hw_info_box.addWidget(self.btn_regen_id)
+        card_layout.addLayout(hw_info_box)
+
         # Bilgi Notu & Canlı Durum
         self.lbl_status = QLabel("💡 Not: Sınıf adı bu tahtaya özeldir. Okul adı ise telefondaki Müdür Panelinden tüm tahtalara tek tıkla gönderilir.")
         self.lbl_status.setFont(QFont("Segoe UI", 10))
@@ -1082,6 +1230,8 @@ class SettingsOverlayWidget(QWidget):
         self.input_board.setText(self.lock_window.sinif_adi)
         self.input_school.setText(self.lock_window.okul_adi)
         self.input_url.setText(self.lock_window.sunucu_url)
+        if hasattr(self, "lbl_dev_info"):
+            self.lbl_dev_info.setText(f"🆔 Cihaz Kimliği: {self.lock_window.cihaz_id} (Fiziksel Donanıma Özgü)")
         self.active_input = self.input_board
         self._update_input_styles()
         self.lbl_status.setText("💡 Not: Sınıf adı bu tahtaya özeldir. Okul adı ise telefondaki Müdür Panelinden tüm tahtalara tek tıkla gönderilir.")
@@ -1089,6 +1239,21 @@ class SettingsOverlayWidget(QWidget):
         self.setGeometry(0, 0, self.lock_window.width(), self.lock_window.height())
         self.show()
         self.raise_()
+
+    def regenerate_device_id(self):
+        """Tahtanın fiziksel ağ kartını yeniden tarayıp yeni bir cihaz kimliği üretir."""
+        new_id = get_device_id(self.lock_window.cfg, force_regenerate=True)
+        self.lock_window.cihaz_id = new_id
+        if hasattr(self, "lbl_dev_info"):
+            self.lbl_dev_info.setText(f"🆔 Cihaz Kimliği: {new_id} (Yenilendi)")
+        if hasattr(self.lock_window, "lbl_dev_header") and self.lock_window.lbl_dev_header:
+            self.lock_window.lbl_dev_header.setText(f"🆔 {new_id}")
+        self.lock_window.generate_qr()
+        if hasattr(self.lock_window, "ws_thread") and self.lock_window.ws_thread:
+            self.lock_window.ws_thread.device_id = new_id
+            self.lock_window.ws_thread._build_url()
+        self.lbl_status.setText(f"✅ Yeni Cihaz Kimliği atandı: {new_id}")
+        self.lbl_status.setStyleSheet("color: #38bdf8; font-weight: bold; border: none; background: transparent;")
 
     def hide_overlay(self):
         self.hide()
@@ -2281,10 +2446,10 @@ class LockScreenWindow(QMainWindow):
         top_layout.addWidget(VerticalDivider(height_px=28 if compact else 34))
 
         # Sağ: Cihaz ID (Düz, çerçevesiz teknik etiket)
-        lbl_dev = QLabel(f"🆔 {self.cihaz_id}")
-        lbl_dev.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.Bold))
-        lbl_dev.setStyleSheet("color: #94a3b8; border: none; background: transparent; padding: 0 4px;")
-        top_layout.addWidget(lbl_dev)
+        self.lbl_dev_header = QLabel(f"🆔 {self.cihaz_id}")
+        self.lbl_dev_header.setFont(QFont("DejaVu Sans", 9 if compact else 10, QFont.Weight.Bold))
+        self.lbl_dev_header.setStyleSheet("color: #94a3b8; border: none; background: transparent; padding: 0 4px;")
+        top_layout.addWidget(self.lbl_dev_header)
 
         top_layout.addWidget(VerticalDivider(height_px=28 if compact else 34))
 
