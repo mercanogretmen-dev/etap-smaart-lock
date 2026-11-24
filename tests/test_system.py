@@ -50,6 +50,9 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertIn("boardPickerSheet", res_index.text)
         self.assertIn("teacherBoardGrid", res_index.text)
         self.assertIn("teacherPinToggleBtn", res_index.text)
+        self.assertIn("btnToggleLiveWatch", res_index.text)
+        self.assertIn("btnTogglePreviewWall", res_index.text)
+        self.assertIn("v0.5.0", res_index.text)
         self.assertNotIn("customBoardInput", res_index.text)
         self.assertNotIn("boardSelect", res_index.text)
 
@@ -61,6 +64,8 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertIn("fetchOnlineBoards", res_js.text)
         self.assertIn("openBoardPickerSheet", res_js.text)
         self.assertIn("selectTeacherBoard", res_js.text)
+        self.assertIn("toggleLiveWatch", res_js.text)
+        self.assertIn("togglePreviewWall", res_js.text)
 
         # PWA Manifest & Service Worker & İkon testleri
         res_manifest = self.client.get("/manifest.json")
@@ -583,6 +588,112 @@ class TestEtapSmartLockSystem(unittest.TestCase):
                 self.assertEqual(res_single.json()["board_id"], "etap-upd-1")
                 cmd_single = ws1.receive_json()
                 self.assertEqual(cmd_single.get("action"), "update_client")
+
+    # -------------------------------------------------------------------------
+    # 10. Akıllı Canlı İzleme (Smart Diff), Önizleme Duvarı & Sürüm Uyumu (v0.5.0)
+    # -------------------------------------------------------------------------
+    def test_10_live_watch_diff_and_thumbnails_wall(self):
+        """Yöntem 1 (Smart Diff), Yöntem 2 (/api/boards/thumbnails) ve v0.5.0 sürüm uyumunu test eder."""
+        import importlib.util
+        import json as _json
+
+        # 1. Hatalı PIN ile /api/boards/thumbnails 401 dönmeli
+        res_unauth = self.client.post("/api/boards/thumbnails", json={"admin_pin": "0000"})
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # 2. 2 bağlı tahta ile Smart Diff & Toplu Thumbnail testleri
+        orig_send = manager.send_to_board
+
+        async def mock_send_smart_frames(b_id, msg):
+            if msg.get("action") == "take_screenshot":
+                req_id = msg.get("request_id")
+                fut = manager.pending_screenshots.get(req_id)
+                if fut and not fut.done():
+                    last_h = msg.get("last_hash", "")
+                    if last_h == "abc123" or (b_id == "t1" and last_h == "h1"):
+                        fut.set_result({
+                            "action": "screenshot_response",
+                            "request_id": req_id,
+                            "image": "",
+                            "frame_hash": last_h,
+                            "unchanged": True,
+                            "timestamp": time.time(),
+                        })
+                    else:
+                        fut.set_result({
+                            "action": "screenshot_response",
+                            "request_id": req_id,
+                            "image": "data:image/jpeg;base64,/9j/liveframe",
+                            "frame_hash": f"hash_{b_id}",
+                            "unchanged": False,
+                            "timestamp": time.time(),
+                        })
+            return await orig_send(b_id, msg)
+
+        with self.client.websocket_connect("/ws/board/t1?name=9-A&version=v0.5.0") as ws1:
+            ws1.receive_json()  # welcome
+            with self.client.websocket_connect("/ws/board/t2?name=10-B&version=v0.5.0") as ws2:
+                ws2.receive_json()  # welcome
+                manager.send_to_board = mock_send_smart_frames
+                try:
+                    # A) Yöntem 1 Smart Diff testi (width=720, quality=55, last_hash="abc123")
+                    res_diff = self.client.post("/api/board/screenshot", json={
+                        "admin_pin": config.ADMIN_PIN,
+                        "board_id": "t1",
+                        "width": 720,
+                        "quality": 55,
+                        "last_hash": "abc123",
+                    })
+                    self.assertEqual(res_diff.status_code, 200)
+                    diff_data = res_diff.json()
+                    self.assertTrue(diff_data["success"])
+                    self.assertTrue(diff_data["unchanged"])
+                    self.assertEqual(diff_data["frame_hash"], "abc123")
+                    self.assertEqual(diff_data["image"], "")
+
+                    ws1_cmd = ws1.receive_json()
+                    self.assertEqual(ws1_cmd.get("action"), "take_screenshot")
+                    self.assertEqual(ws1_cmd.get("width"), 720)
+                    self.assertEqual(ws1_cmd.get("quality"), 55)
+                    self.assertEqual(ws1_cmd.get("last_hash"), "abc123")
+
+                    # B) Yöntem 2 Toplu Önizleme Duvarı testi (t1 unchanged, t2 yeni kare)
+                    res_wall = self.client.post("/api/boards/thumbnails", json={
+                        "admin_pin": config.ADMIN_PIN,
+                        "width": 320,
+                        "quality": 40,
+                        "hashes": {"t1": "h1"},
+                    })
+                    self.assertEqual(res_wall.status_code, 200)
+                    wall_data = res_wall.json()
+                    self.assertTrue(wall_data["success"])
+                    self.assertEqual(wall_data["count"], 2)
+                    self.assertTrue(wall_data["thumbnails"]["t1"]["unchanged"])
+                    self.assertEqual(wall_data["thumbnails"]["t1"]["image"], "")
+                    self.assertFalse(wall_data["thumbnails"]["t2"]["unchanged"])
+                    self.assertTrue(wall_data["thumbnails"]["t2"]["image"].startswith("data:image/jpeg;base64,"))
+
+                    w_cmd1 = ws1.receive_json()
+                    w_cmd2 = ws2.receive_json()
+                    self.assertEqual(w_cmd1.get("width"), 320)
+                    self.assertEqual(w_cmd1.get("quality"), 40)
+                    self.assertEqual(w_cmd2.get("width"), 320)
+                    self.assertEqual(w_cmd2.get("quality"), 40)
+                finally:
+                    manager.send_to_board = orig_send
+
+        # 3. version.json ve istemci APP_VERSION uyumu (v0.5.0)
+        with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as vf:
+            ver_json = _json.load(vf)
+        self.assertEqual(ver_json.get("version"), "v0.5.0")
+
+        spec = importlib.util.spec_from_file_location(
+            "kilit_ekrani_v05",
+            os.path.join(PROJECT_ROOT, "client-tahta", "kilit_ekrani.py")
+        )
+        mod_kilit = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod_kilit)
+        self.assertEqual(mod_kilit.APP_VERSION, "v0.5.0")
 
 
 if __name__ == "__main__":

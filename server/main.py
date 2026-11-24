@@ -222,6 +222,15 @@ class SchoolSettingsRequest(BaseModel):
 class ScreenshotRequest(BaseModel):
     board_id: str
     admin_pin: str
+    width: int = 960
+    quality: int = 72
+    last_hash: Optional[str] = None
+
+class ThumbnailsRequest(BaseModel):
+    admin_pin: str
+    width: int = 320
+    quality: int = 40
+    hashes: Dict[str, str] = {}
 
 class BulkActionRequest(BaseModel):
     admin_pin: str
@@ -569,11 +578,50 @@ async def update_school_settings(req: SchoolSettingsRequest):
     }
 
 # -------------------------------------------------------------
-# 📸 Uzaktan Canlı Ekran Görüntüsü Alma API'si
+# 📸 Uzaktan Canlı Ekran Görüntüsü & Önizleme Duvarı API'leri
 # -------------------------------------------------------------
+async def _fetch_board_frame(
+    target_id: str,
+    width: int,
+    quality: int,
+    last_hash: str = "",
+    timeout: float = 7.0,
+) -> dict:
+    """Tek bir tahtadan WebSocket üzerinden akıllı ekran görüntüsü (Smart Diff destekli) ister."""
+    request_id = str(uuid.uuid4())[:8]
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    manager.pending_screenshots[request_id] = future
+
+    try:
+        sent = await manager.send_to_board(target_id, {
+            "action": "take_screenshot",
+            "request_id": request_id,
+            "width": width,
+            "quality": quality,
+            "last_hash": last_hash,
+            "timestamp": time.time(),
+        })
+        if not sent:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Tahtaya ekran görüntüsü alma emri iletilemedi."
+            )
+
+        try:
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Tahtadan ekran görüntüsü zamanında alınamadı (zaman aşımı)."
+            )
+    finally:
+        manager.pending_screenshots.pop(request_id, None)
+
+
 @app.post("/api/board/screenshot")
 async def get_board_screenshot(req: ScreenshotRequest):
-    """Müdür / İdare panelinden tahtanın canlı ekran görüntüsünü anında çeker"""
+    """Müdür / İdare panelinden tahtanın canlı ekran görüntüsünü (Smart Diff destekli) çeker"""
     if req.admin_pin != config.ADMIN_PIN:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -587,42 +635,64 @@ async def get_board_screenshot(req: ScreenshotRequest):
             detail=f"'{req.board_id}' tahtası şu anda çevrimdışı! (Kilit uygulaması veya internet kapalı olabilir)"
         )
 
-    import uuid
-    request_id = str(uuid.uuid4())[:8]
-    loop = asyncio.get_running_loop()
-    future = loop.create_future()
-    manager.pending_screenshots[request_id] = future
+    width = max(240, min(1280, req.width))
+    quality = max(25, min(85, req.quality))
+    result = await _fetch_board_frame(
+        target_id,
+        width=width,
+        quality=quality,
+        last_hash=(req.last_hash or "").strip(),
+        timeout=7.0,
+    )
+    return {
+        "success": True,
+        "board_id": req.board_id,
+        "name": manager.board_names.get(target_id, req.board_id),
+        "image": result.get("image", ""),
+        "unchanged": bool(result.get("unchanged", False)),
+        "frame_hash": str(result.get("frame_hash", "")),
+        "timestamp": result.get("timestamp", time.time()),
+    }
 
-    # Tahtaya ekran görüntüsü alma emri gönder
-    sent = await manager.send_to_board(target_id, {
-        "action": "take_screenshot",
-        "request_id": request_id,
-        "timestamp": time.time()
-    })
 
-    if not sent:
-        manager.pending_screenshots.pop(request_id, None)
+@app.post("/api/boards/thumbnails")
+async def get_boards_thumbnails(req: ThumbnailsRequest):
+    """Müdür Önizleme Duvarı için bağlı tüm tahtalardan hafif küçük kareleri toplu ve Smart Diff ile ister"""
+    if req.admin_pin != config.ADMIN_PIN:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Tahtaya ekran görüntüsü alma emri iletilemedi."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
         )
 
-    try:
-        # En fazla 7 saniye içinde tahtadan sıkıştırılmış Base64 görüntüyü bekle
-        result = await asyncio.wait_for(future, timeout=7.0)
-        return {
-            "success": True,
-            "board_id": req.board_id,
-            "name": manager.board_names.get(target_id, req.board_id),
-            "image": result.get("image"),
-            "timestamp": result.get("timestamp", time.time())
-        }
-    except asyncio.TimeoutError:
-        manager.pending_screenshots.pop(request_id, None)
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Tahtadan ekran görüntüsü zamanında alınamadı (zaman aşımı)."
-        )
+    width = max(160, min(480, req.width))
+    quality = max(20, min(65, req.quality))
+    connected_ids = list(manager.active_connections.keys())
+
+    async def _grab_one(b_id: str):
+        try:
+            res = await _fetch_board_frame(
+                b_id,
+                width=width,
+                quality=quality,
+                last_hash=str(req.hashes.get(b_id, "") or "").strip(),
+                timeout=4.0,
+            )
+            return b_id, {
+                "unchanged": bool(res.get("unchanged", False)),
+                "image": res.get("image", ""),
+                "frame_hash": str(res.get("frame_hash", "")),
+                "timestamp": res.get("timestamp", time.time()),
+            }
+        except Exception:
+            return b_id, None
+
+    results = await asyncio.gather(*[_grab_one(b_id) for b_id in connected_ids])
+    thumbnails = {b_id: data for b_id, data in results if data is not None}
+    return {
+        "success": True,
+        "thumbnails": thumbnails,
+        "count": len(thumbnails),
+    }
 
 # -------------------------------------------------------------
 # ⚡ Toplu Yönetim API'leri (Tüm Tahtaları Kilitle / Aç / Kapat)

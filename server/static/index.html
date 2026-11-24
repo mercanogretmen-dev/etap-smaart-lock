@@ -178,11 +178,19 @@
       <!-- ALT SEKME A: CANLI TAHTALAR & EKRAN İZLEME -->
       <div id="adminSubFleetView" class="admin-sub-view active">
         <div class="card admin-card">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom: 4px;">
-            <h3 style="margin:0;">🖥️ Canlı Tahtalar & Ekran İzleme</h3>
-            <button type="button" class="btn-refresh-fleet" title="Yenile" onclick="fetchAdminFleet()">🔄 Yenile</button>
+          <div class="fleet-header-bar">
+            <h3 style="margin:0;">🖥️ Canlı Tahtalar & İzleme</h3>
+            <div class="fleet-header-controls">
+              <button id="btnTogglePreviewWall" type="button" class="btn-preview-wall" title="Çoklu Önizleme Duvarı" onclick="togglePreviewWall()">📺 Önizleme Duvarı</button>
+              <button type="button" class="btn-refresh-fleet" title="Yenile" onclick="fetchAdminFleet()">🔄 Yenile</button>
+            </div>
           </div>
-          <p class="hint">Tahtanın o anki ekranını görmek için <strong>📸 Ekranı Gör</strong>, güncellemek için <strong>🔄 Güncelle</strong> butonuna dokunun.</p>
+          <p class="hint">Tahtanın o anki ekranını görmek için <strong>📸 Ekranı Gör</strong>, canlı akış için <strong>📺 Önizleme Duvarı</strong>'na dokunun.</p>
+
+          <div id="previewWallBanner" class="preview-wall-banner hidden">
+            <span><span class="live-dot-active"></span> Çoklu Önizleme Duvarı Aktif (9 sn • Smart Diff)</span>
+            <small>Canlı izlemek için karta dokunun</small>
+          </div>
 
           <div id="adminFleetContainer" class="fleet-grid">
             <div style="text-align:center; padding:18px; color:#94a3b8;">Tahtalar taranıyor...</div>
@@ -279,7 +287,7 @@
     <!-- Geliştirici Alt Bilgi Rozeti -->
     <footer style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; margin-top:8px; color:#94a3b8; font-size:0.78rem; border-top:1px solid rgba(56,189,248,0.15);">
       <img src="/icons/mercan_robotik_icon.png" alt="Mercan Robotik" style="width:24px; height:24px; border-radius:6px;">
-      <span>Geliştirici: <strong style="color:#38bdf8;">MERCAN</strong> <strong style="color:#ff5e4d;">ROBOTİK</strong> • 🛡️ ET Güvenliği Aktif • v0.4.0</span>
+      <span>Geliştirici: <strong style="color:#38bdf8;">MERCAN</strong> <strong style="color:#ff5e4d;">ROBOTİK</strong> • 🛡️ ET Güvenliği Aktif • v0.5.0</span>
     </footer>
 
     <!-- Güç Kapatma Onay Modalı -->
@@ -310,13 +318,14 @@
 
         <div id="screenshotImgWrapper" class="hidden">
           <img id="screenshotImg" src="" alt="Tahta Ekranı" style="width:100%; border-radius:10px; border:1px solid #38bdf8; box-shadow:0 8px 24px rgba(0,0,0,0.5); margin-top:8px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:0.78rem; color:#94a3b8;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:0.78rem; color:#94a3b8; gap:8px; flex-wrap:wrap;">
             <span id="screenshotTimestamp">🕒 Alındı: --:--:--</span>
-            <span style="color:#34d399; font-weight:600;">● Canlı Görüntü</span>
+            <span id="liveWatchStatus" style="color:#34d399; font-weight:600;">● Anlık Kare</span>
           </div>
         </div>
 
-        <div class="modal-actions" style="margin-top:12px;">
+        <div class="modal-actions screenshot-modal-actions" style="margin-top:12px;">
+          <button id="btnToggleLiveWatch" type="button" class="btn btn-live-toggle" onclick="toggleLiveWatch()">🔴 Canlı İzle</button>
           <button id="btnRefreshScreenshot" class="btn btn-secondary" onclick="refreshCurrentScreenshot()">🔄 Tekrar Çek</button>
           <button class="btn btn-primary" onclick="closeScreenshotModal()">Kapat</button>
         </div>

@@ -42,7 +42,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v0.4.0"
+APP_VERSION = "v0.5.0"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -373,14 +373,16 @@ class WebSocketClientThread(QThread):
                 print(f"[WS] Isim gonderme hatasi: {e}")
         return False
 
-    def send_screenshot_response(self, request_id: str, b64_img: str) -> bool:
-        """Sunucuya çekilen anlık ekran görüntüsünü (JPEG Base64) iletir."""
+    def send_screenshot_response(self, request_id: str, b64_img: str, frame_hash: str = "", unchanged: bool = False) -> bool:
+        """Sunucuya çekilen anlık ekran görüntüsünü (JPEG Base64 veya Smart Diff boş yanıt) iletir."""
         if self.ws and self.loop and self.loop.is_running():
             try:
                 payload = json.dumps({
                     "action": "screenshot_response",
                     "request_id": request_id,
                     "image": b64_img,
+                    "frame_hash": frame_hash,
+                    "unchanged": unchanged,
                     "timestamp": time.time()
                 })
                 asyncio.run_coroutine_threadsafe(self.ws.send(payload), self.loop)
@@ -3657,7 +3659,10 @@ class LockScreenWindow(QMainWindow):
             self.handle_poweroff()
         elif action == "take_screenshot":
             request_id = data.get("request_id", "")
-            self.capture_and_send_screenshot(request_id)
+            width = data.get("width", 960)
+            quality = data.get("quality", 72)
+            last_hash = data.get("last_hash", "")
+            self.capture_and_send_screenshot(request_id, width=width, quality=quality, last_hash=last_hash)
         elif action == "update_client":
             self.start_remote_update(by=data.get("by", "Yönetici"), only_if_newer=False)
         elif action == "banner_message":
@@ -3773,8 +3778,8 @@ class LockScreenWindow(QMainWindow):
     def _on_already_up_to_date(self, _ver: str):
         self.is_updating = False
 
-    def capture_and_send_screenshot(self, request_id: str):
-        """Müdür panelinin talebiyle anlık ekran görüntüsünü çeker, optimize edip gönderir."""
+    def capture_and_send_screenshot(self, request_id: str, width: int = 960, quality: int = 72, last_hash: str = ""):
+        """Müdür panelinin talebiyle parametreli & Smart Diff destekli ekran görüntüsü çeker."""
         try:
             import base64
             from PyQt6.QtCore import QBuffer, QIODevice
@@ -3782,20 +3787,34 @@ class LockScreenWindow(QMainWindow):
             if not screen:
                 return
 
+            width = max(160, min(1280, int(width)))
+            quality = max(20, min(85, int(quality)))
+            transform_mode = (
+                Qt.TransformationMode.FastTransformation
+                if width <= 400
+                else Qt.TransformationMode.SmoothTransformation
+            )
+
             # grabWindow(0) kök X11 penceresini çeker (arkada masaüstü açık olsa bile!)
             pix = screen.grabWindow(0)
-            if pix.width() > 960:
-                pix = pix.scaledToWidth(960, Qt.TransformationMode.SmoothTransformation)
+            if pix.width() > width:
+                pix = pix.scaledToWidth(width, transform_mode)
 
             buf = QBuffer()
             buf.open(QIODevice.OpenModeFlag.WriteOnly)
-            # Hafif ve hızlı JPEG formatı (~40-60 KB)
-            pix.save(buf, "JPEG", 72)
-            b64_data = "data:image/jpeg;base64," + base64.b64encode(buf.data().data()).decode("ascii")
+            pix.save(buf, "JPEG", quality)
+            raw_bytes = buf.data().data()
             buf.close()
 
+            frame_hash = hashlib.md5(raw_bytes).hexdigest()[:12]
+            if last_hash and frame_hash == last_hash:
+                if hasattr(self, "ws_thread") and self.ws_thread:
+                    self.ws_thread.send_screenshot_response(request_id, "", frame_hash=frame_hash, unchanged=True)
+                return
+
+            b64_data = "data:image/jpeg;base64," + base64.b64encode(raw_bytes).decode("ascii")
             if hasattr(self, "ws_thread") and self.ws_thread:
-                self.ws_thread.send_screenshot_response(request_id, b64_data)
+                self.ws_thread.send_screenshot_response(request_id, b64_data, frame_hash=frame_hash, unchanged=False)
         except Exception as e:
             print(f"[SCREENSHOT] Yakalama hatası: {e}")
 

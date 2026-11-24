@@ -845,6 +845,194 @@ input:focus, select:focus, textarea:focus {
   border-color: #059669;
 }
 
+/* -------------------------------------------------------------
+ * 🔴 Yöntem 1 (Canlı İzle) & 📺 Yöntem 2 (Önizleme Duvarı) Stilleri
+ * ------------------------------------------------------------- */
+.fleet-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.fleet-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-preview-wall {
+  width: auto;
+  padding: 7px 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 10px;
+  background: rgba(2, 132, 199, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #7dd3fc;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+}
+
+.btn-preview-wall:hover {
+  background: rgba(2, 132, 199, 0.32);
+  color: #fff;
+}
+
+.btn-preview-wall.active {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border-color: rgba(252, 165, 165, 0.6);
+  color: #ffffff;
+  box-shadow: 0 3px 12px rgba(239, 68, 68, 0.4);
+}
+
+.preview-wall-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: rgba(2, 132, 199, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 10px;
+  padding: 8px 11px;
+  margin-top: 6px;
+  font-size: 0.77rem;
+  font-weight: 700;
+  color: #bae6fd;
+}
+
+.preview-wall-banner small {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.live-dot-active {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  margin-right: 4px;
+  animation: livePulse 1.2s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  50% { opacity: 0.65; transform: scale(1.2); box-shadow: 0 0 0 5px rgba(239, 68, 68, 0); }
+}
+
+.fleet-grid.wall-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-height: 68vh;
+}
+
+.fleet-grid.wall-mode .fleet-card {
+  padding: 10px;
+  gap: 8px;
+}
+
+.fleet-grid.wall-mode .fleet-name {
+  font-size: 0.84rem;
+}
+
+.fleet-grid.wall-mode .fleet-status {
+  font-size: 0.71rem;
+}
+
+.fleet-grid.wall-mode .fleet-actions {
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.fleet-grid.wall-mode .btn-update-board,
+.fleet-grid.wall-mode .btn-screenshot {
+  padding: 7px 6px;
+  font-size: 0.75rem;
+}
+
+.fleet-thumb-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #020617;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 9px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.fleet-thumb-box:hover {
+  border-color: #38bdf8;
+  transform: scale(1.015);
+}
+
+.fleet-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.fleet-thumb-placeholder {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 600;
+  text-align: center;
+  padding: 6px;
+}
+
+.fleet-thumb-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.screenshot-modal-actions {
+  flex-wrap: wrap;
+}
+
+.btn-live-toggle {
+  background: linear-gradient(135deg, #e11d48 0%, #be123c 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 6px 16px -4px rgba(225, 29, 72, 0.5);
+}
+
+.btn-live-toggle.live-active {
+  background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.55);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+}
+
+@media (max-width: 440px) {
+  .screenshot-modal-actions .btn-live-toggle {
+    flex: 1 1 100%;
+  }
+}
+
 .spinner {
   width: 36px;
   height: 36px;

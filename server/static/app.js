@@ -107,6 +107,11 @@ function switchTab(tabName) {
   if (tabName !== "teacher" && isScanning) {
     stopCameraScanner();
   }
+  // İdare sekmesinden çıkıldıysa kota koruması olarak canlı akışları durdur
+  if (tabName !== "admin") {
+    stopPreviewWall();
+    stopLiveWatch();
+  }
 }
 
 function switchAdminSubTab(subTabName) {
@@ -129,6 +134,7 @@ function switchAdminSubTab(subTabName) {
   } else if (subTabName === "manage") {
     manageBtn.classList.add("active");
     manageView.classList.add("active");
+    stopPreviewWall();
     fetchOnlineBoards();
     fetchSchoolName();
   }
@@ -820,13 +826,30 @@ async function sendSchoolNameUpdate() {
 }
 
 // -------------------------------------------------------------
-// 🖥️ Canlı Tahta Filosu & Uzaktan Ekran Görüntüsü
+// 🖥️ Canlı Tahta Filosu, Yöntem 1 (Canlı İzle) & Yöntem 2 (Önizleme Duvarı)
 // -------------------------------------------------------------
 let currentScreenshotBoard = null;
+const LIVE_WATCH_INTERVAL_MS = 1800;
+const LIVE_WATCH_MAX_MS = 180000;
+let liveWatchActive = false;
+let liveWatchSessionId = 0;
+let liveWatchTimer = null;
+let liveWatchStartedAt = 0;
+let currentLiveFrameHash = "";
+
+const PREVIEW_WALL_INTERVAL_MS = 9000;
+const PREVIEW_WALL_MAX_MS = 180000;
+let previewWallActive = false;
+let previewWallSessionId = 0;
+let previewWallTimer = null;
+let previewWallStartedAt = 0;
+let previewWallHashes = {};
+let previewWallImages = {};
+let resumePreviewWallAfterModal = false;
 
 async function fetchAdminFleet() {
   const container = document.getElementById("adminFleetContainer");
-  if (container) {
+  if (container && !previewWallActive) {
     container.innerHTML = '<div style="text-align:center; padding:15px; color:#38bdf8;"><div class="spinner"></div><div style="margin-top:8px;">Tahtalar taranıyor...</div></div>';
   }
   await fetchOnlineBoards();
@@ -836,9 +859,11 @@ function renderAdminBoardFleet(boards) {
   const container = document.getElementById("adminFleetContainer");
   if (!container) return;
 
+  container.classList.toggle("wall-mode", previewWallActive);
+
   if (!boards || boards.length === 0) {
     container.innerHTML = `
-      <div style="text-align:center; padding:18px; color:#94a3b8; font-size:0.88rem;">
+      <div style="text-align:center; padding:18px; color:#94a3b8; font-size:0.88rem; grid-column: 1 / -1;">
         ⚠️ Şu anda açık ve çevrimiçi olan akıllı tahta bulunmuyor.
       </div>
     `;
@@ -860,6 +885,18 @@ function renderAdminBoardFleet(boards) {
       ? `<span class="fleet-version-badge">${escapeHtml(b.version)}</span>`
       : "";
 
+    let thumbBlock = "";
+    if (previewWallActive) {
+      const cachedImg = previewWallImages[b.id] || "";
+      thumbBlock = `
+        <div class="fleet-thumb-box" onclick="openScreenshotModal('${escapeHtml(b.id)}', '${escapeHtml(displayName)}', true)" title="Büyük canlı izlemeyi aç">
+          <img class="fleet-thumb-img${cachedImg ? "" : " hidden"}" data-thumb-board="${escapeHtml(b.id)}" src="${cachedImg}" alt="${escapeHtml(displayName)}">
+          <div class="fleet-thumb-placeholder${cachedImg ? " hidden" : ""}" data-thumb-placeholder="${escapeHtml(b.id)}">🖼️ Kare bekleniyor...</div>
+          <span class="fleet-thumb-badge">▶ Canlı</span>
+        </div>
+      `;
+    }
+
     const card = document.createElement("div");
     card.className = "fleet-card";
     card.innerHTML = `
@@ -870,6 +907,7 @@ function renderAdminBoardFleet(boards) {
         </div>
         <span class="fleet-status ${statusClass}">${statusText}</span>
       </div>
+      ${thumbBlock}
       <div class="fleet-actions">
         <button type="button" class="btn-update-board" onclick="triggerSingleBoardUpdate('${escapeHtml(b.id)}', '${escapeHtml(displayName)}')" title="Bu tahtayı uzaktan güncelle">
           🔄 Güncelle
@@ -883,7 +921,141 @@ function renderAdminBoardFleet(boards) {
   });
 }
 
-async function openScreenshotModal(boardId, boardName) {
+function togglePreviewWall() {
+  if (previewWallActive) {
+    stopPreviewWall();
+  } else {
+    startPreviewWall();
+  }
+}
+
+function startPreviewWall() {
+  const adminPin = getAdminPinValue("adminPin");
+  if (!adminPin) {
+    showToast("Önizleme duvarı için önce İdare Giriş Kodunu giriniz!", "error");
+    const pinEl = document.getElementById("adminPin");
+    if (pinEl) pinEl.focus();
+    return;
+  }
+
+  previewWallActive = true;
+  previewWallSessionId += 1;
+  previewWallStartedAt = Date.now();
+  previewWallHashes = {};
+
+  if (previewWallTimer) {
+    clearTimeout(previewWallTimer);
+    previewWallTimer = null;
+  }
+
+  const btn = document.getElementById("btnTogglePreviewWall");
+  if (btn) {
+    btn.textContent = "⏹️ Duvarı Durdur";
+    btn.classList.add("active");
+  }
+  const banner = document.getElementById("previewWallBanner");
+  if (banner) banner.classList.remove("hidden");
+
+  renderAdminBoardFleet(cachedOnlineBoards);
+  const mySession = previewWallSessionId;
+  fetchPreviewWallTick(mySession);
+}
+
+function stopPreviewWall(preserveResumeFlag = false) {
+  const wasActive = previewWallActive;
+  previewWallActive = false;
+  previewWallSessionId += 1;
+  if (previewWallTimer) {
+    clearTimeout(previewWallTimer);
+    previewWallTimer = null;
+  }
+  if (!preserveResumeFlag) {
+    resumePreviewWallAfterModal = false;
+  }
+
+  const btn = document.getElementById("btnTogglePreviewWall");
+  if (btn) {
+    btn.textContent = "📺 Önizleme Duvarı";
+    btn.classList.remove("active");
+  }
+  const banner = document.getElementById("previewWallBanner");
+  if (banner) banner.classList.add("hidden");
+
+  if (wasActive) {
+    renderAdminBoardFleet(cachedOnlineBoards);
+  }
+}
+
+async function fetchPreviewWallTick(sessionId) {
+  if (!previewWallActive || sessionId !== previewWallSessionId) return;
+
+  if (Date.now() - previewWallStartedAt >= PREVIEW_WALL_MAX_MS) {
+    stopPreviewWall();
+    showToast("⏱️ Önizleme Duvarı kota koruması nedeniyle durduruldu (3 dk).", "info");
+    return;
+  }
+
+  const adminPin = getAdminPinValue("adminPin");
+  if (!adminPin) {
+    stopPreviewWall();
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/boards/thumbnails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        admin_pin: adminPin,
+        width: 320,
+        quality: 40,
+        hashes: previewWallHashes
+      })
+    });
+    const data = await res.json();
+
+    if (!previewWallActive || sessionId !== previewWallSessionId) return;
+
+    if (res.status === 401) {
+      stopPreviewWall();
+      showToast(data.detail || "Hatalı Müdür/İdare Giriş Kodu!", "error");
+      return;
+    }
+
+    if (res.ok && data.success && data.thumbnails) {
+      const imgs = document.querySelectorAll("#adminFleetContainer img[data-thumb-board]");
+      const placeholders = document.querySelectorAll("#adminFleetContainer [data-thumb-placeholder]");
+
+      Object.entries(data.thumbnails).forEach(([boardId, info]) => {
+        if (info.frame_hash) {
+          previewWallHashes[boardId] = info.frame_hash;
+        }
+        if (!info.unchanged && info.image) {
+          previewWallImages[boardId] = info.image;
+          imgs.forEach(img => {
+            if (img.dataset.thumbBoard === boardId) {
+              img.src = info.image;
+              img.classList.remove("hidden");
+            }
+          });
+          placeholders.forEach(ph => {
+            if (ph.dataset.thumbPlaceholder === boardId) {
+              ph.classList.add("hidden");
+            }
+          });
+        }
+      });
+    }
+  } catch (err) {
+    console.warn("Önizleme duvarı karesi alınamadı:", err);
+  } finally {
+    if (previewWallActive && sessionId === previewWallSessionId) {
+      previewWallTimer = setTimeout(() => fetchPreviewWallTick(sessionId), PREVIEW_WALL_INTERVAL_MS);
+    }
+  }
+}
+
+async function openScreenshotModal(boardId, boardName, autoStartLive = false) {
   const adminPin = getAdminPinValue("adminPin");
   if (!adminPin) {
     showToast("Lütfen yukarıdaki İdare Giriş Kodunu giriniz!", "error");
@@ -892,68 +1064,244 @@ async function openScreenshotModal(boardId, boardName) {
     return;
   }
 
+  stopLiveWatch();
+  if (previewWallActive) {
+    resumePreviewWallAfterModal = true;
+    stopPreviewWall(true);
+  }
+
   currentScreenshotBoard = { id: boardId, name: boardName };
+  currentLiveFrameHash = "";
 
   const modal = document.getElementById("screenshotModal");
   const title = document.getElementById("screenshotBoardTitle");
   const loading = document.getElementById("screenshotLoading");
   const wrapper = document.getElementById("screenshotImgWrapper");
+  const statusEl = document.getElementById("liveWatchStatus");
 
   title.textContent = `📸 ${boardName} — Canlı Ekran`;
+  if (statusEl) {
+    statusEl.textContent = "● Anlık Kare";
+    statusEl.style.color = "#34d399";
+  }
   loading.classList.remove("hidden");
   wrapper.classList.add("hidden");
   modal.classList.remove("hidden");
 
-  await requestBoardScreenshot(boardId, adminPin);
+  const ok = await requestBoardScreenshot(boardId, adminPin, {
+    width: autoStartLive ? 720 : 960,
+    quality: autoStartLive ? 55 : 72,
+    lastHash: "",
+    silent: false
+  });
+  if (ok && autoStartLive && currentScreenshotBoard && currentScreenshotBoard.id === boardId) {
+    startLiveWatch();
+  }
 }
 
 async function refreshCurrentScreenshot() {
   if (!currentScreenshotBoard) return;
-  const adminPin = getAdminPinValue("fleetAdminPin");
+  const adminPin = getAdminPinValue("adminPin");
   const loading = document.getElementById("screenshotLoading");
   const wrapper = document.getElementById("screenshotImgWrapper");
+  currentLiveFrameHash = "";
 
   loading.classList.remove("hidden");
   wrapper.classList.add("hidden");
 
-  await requestBoardScreenshot(currentScreenshotBoard.id, adminPin);
+  await requestBoardScreenshot(currentScreenshotBoard.id, adminPin, {
+    width: liveWatchActive ? 720 : 960,
+    quality: liveWatchActive ? 55 : 72,
+    lastHash: "",
+    silent: false
+  });
 }
 
-async function requestBoardScreenshot(boardId, adminPin) {
+async function requestBoardScreenshot(boardId, adminPin, options = {}) {
   const loading = document.getElementById("screenshotLoading");
   const wrapper = document.getElementById("screenshotImgWrapper");
   const img = document.getElementById("screenshotImg");
   const timeEl = document.getElementById("screenshotTimestamp");
+  const statusEl = document.getElementById("liveWatchStatus");
+
+  const width = options.width ?? 960;
+  const quality = options.quality ?? 72;
+  const lastHash = options.lastHash || "";
+  const silent = Boolean(options.silent);
 
   try {
     const res = await fetch("/api/board/screenshot", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ board_id: boardId, admin_pin: adminPin })
+      body: JSON.stringify({
+        board_id: boardId,
+        admin_pin: adminPin,
+        width: width,
+        quality: quality,
+        last_hash: lastHash
+      })
     });
     const data = await res.json();
 
-    if (res.ok && data.success && data.image) {
-      img.src = data.image;
-      const d = new Date(data.timestamp * 1000);
-      timeEl.textContent = `🕒 Çekilme Saati: ${d.toLocaleTimeString("tr-TR")}`;
-      loading.classList.add("hidden");
-      wrapper.classList.remove("hidden");
-    } else {
-      loading.classList.add("hidden");
-      showToast(data.detail || "Ekran görüntüsü alınamadı!", "error");
-      closeScreenshotModal();
+    if (res.ok && data.success) {
+      const d = new Date((data.timestamp || Date.now() / 1000) * 1000);
+      timeEl.textContent = `🕒 Son Kontrol: ${d.toLocaleTimeString("tr-TR")}`;
+
+      if (data.frame_hash) {
+        currentLiveFrameHash = data.frame_hash;
+      }
+
+      if (data.unchanged) {
+        if (statusEl && liveWatchActive) {
+          statusEl.textContent = "⚡ Sabit Ekran (0 KB)";
+          statusEl.style.color = "#38bdf8";
+        }
+        return true;
+      }
+
+      if (data.image) {
+        img.src = data.image;
+        loading.classList.add("hidden");
+        wrapper.classList.remove("hidden");
+        if (statusEl && liveWatchActive) {
+          statusEl.innerHTML = '<span class="live-dot-active"></span> CANLI (2 sn)';
+          statusEl.style.color = "#f87171";
+        }
+        return true;
+      }
     }
+
+    if (silent) {
+      if (res.status === 401 || res.status === 404) {
+        stopLiveWatch();
+        showToast(data.detail || "Canlı izleme durduruldu.", "error");
+      } else if (statusEl && liveWatchActive) {
+        statusEl.textContent = "⚠️ Kare gecikti";
+        statusEl.style.color = "#fbbf24";
+      }
+      return false;
+    }
+
+    loading.classList.add("hidden");
+    showToast(data.detail || "Ekran görüntüsü alınamadı!", "error");
+    closeScreenshotModal();
+    return false;
   } catch (err) {
+    if (silent) {
+      if (statusEl && liveWatchActive) {
+        statusEl.textContent = "⚠️ Bağlantı bekleniyor";
+        statusEl.style.color = "#fbbf24";
+      }
+      return false;
+    }
     loading.classList.add("hidden");
     showToast("Sunucu bağlantı hatası: " + err, "error");
     closeScreenshotModal();
+    return false;
+  }
+}
+
+function toggleLiveWatch() {
+  if (liveWatchActive) {
+    stopLiveWatch();
+  } else {
+    startLiveWatch();
+  }
+}
+
+function startLiveWatch() {
+  if (!currentScreenshotBoard) return;
+  const adminPin = getAdminPinValue("adminPin");
+  if (!adminPin) {
+    showToast("Lütfen İdare Giriş Kodunu giriniz!", "error");
+    return;
+  }
+
+  liveWatchActive = true;
+  liveWatchSessionId += 1;
+  liveWatchStartedAt = Date.now();
+  if (liveWatchTimer) {
+    clearTimeout(liveWatchTimer);
+    liveWatchTimer = null;
+  }
+
+  const btn = document.getElementById("btnToggleLiveWatch");
+  if (btn) {
+    btn.textContent = "⏹️ Canlı İzlemeyi Durdur";
+    btn.classList.add("live-active");
+  }
+  const statusEl = document.getElementById("liveWatchStatus");
+  if (statusEl) {
+    statusEl.innerHTML = '<span class="live-dot-active"></span> CANLI (2 sn)';
+    statusEl.style.color = "#f87171";
+  }
+
+  const mySession = liveWatchSessionId;
+  liveWatchTimer = setTimeout(() => fetchLiveWatchTick(mySession), LIVE_WATCH_INTERVAL_MS);
+}
+
+function stopLiveWatch() {
+  liveWatchActive = false;
+  liveWatchSessionId += 1;
+  if (liveWatchTimer) {
+    clearTimeout(liveWatchTimer);
+    liveWatchTimer = null;
+  }
+
+  const btn = document.getElementById("btnToggleLiveWatch");
+  if (btn) {
+    btn.textContent = "🔴 Canlı İzle";
+    btn.classList.remove("live-active");
+  }
+  const statusEl = document.getElementById("liveWatchStatus");
+  if (statusEl) {
+    statusEl.textContent = "● Anlık Kare";
+    statusEl.style.color = "#34d399";
+  }
+}
+
+async function fetchLiveWatchTick(sessionId) {
+  if (!liveWatchActive || sessionId !== liveWatchSessionId || !currentScreenshotBoard) return;
+
+  if (Date.now() - liveWatchStartedAt >= LIVE_WATCH_MAX_MS) {
+    stopLiveWatch();
+    showToast("⏱️ Canlı izleme kota koruması nedeniyle durduruldu (3 dk).", "info");
+    return;
+  }
+
+  const adminPin = getAdminPinValue("adminPin");
+  if (!adminPin) {
+    stopLiveWatch();
+    return;
+  }
+
+  await requestBoardScreenshot(currentScreenshotBoard.id, adminPin, {
+    width: 720,
+    quality: 55,
+    lastHash: currentLiveFrameHash,
+    silent: true
+  });
+
+  if (liveWatchActive && sessionId === liveWatchSessionId) {
+    liveWatchTimer = setTimeout(() => fetchLiveWatchTick(sessionId), LIVE_WATCH_INTERVAL_MS);
   }
 }
 
 function closeScreenshotModal() {
+  stopLiveWatch();
+  currentScreenshotBoard = null;
+  currentLiveFrameHash = "";
   const modal = document.getElementById("screenshotModal");
   if (modal) modal.classList.add("hidden");
+
+  if (resumePreviewWallAfterModal) {
+    resumePreviewWallAfterModal = false;
+    const isFleetViewVisible = document.getElementById("adminTab")?.classList.contains("active") &&
+      document.getElementById("adminSubFleetView")?.classList.contains("active");
+    if (isFleetViewVisible && !document.hidden) {
+      startPreviewWall();
+    }
+  }
 }
 
 // -------------------------------------------------------------
@@ -1184,3 +1532,11 @@ function dismissIosGuide() {
   if (guide) guide.classList.add("hidden");
   sessionStorage.setItem("ios_guide_dismissed", "true");
 }
+
+// Telefon arka plana alındığında veya ekran kapandığında kota koruması olarak akışları durdur
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopLiveWatch();
+    stopPreviewWall();
+  }
+});
