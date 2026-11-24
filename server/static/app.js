@@ -78,20 +78,46 @@ function switchTab(tabName) {
   } else if (tabName === "offline") {
     document.querySelector(".tab-btn:nth-child(2)").classList.add("active");
     document.getElementById("offlineTab").classList.add("active");
-  } else if (tabName === "fleet") {
-    document.querySelector(".tab-btn:nth-child(3)").classList.add("active");
-    document.getElementById("fleetTab").classList.add("active");
-    fetchAdminFleet();
   } else if (tabName === "admin") {
-    document.querySelector(".tab-btn:nth-child(4)").classList.add("active");
+    document.querySelector(".tab-btn:nth-child(3)").classList.add("active");
     document.getElementById("adminTab").classList.add("active");
-    fetchOnlineBoards();
+    const isFleetActive = document.getElementById("adminSubFleetView")?.classList.contains("active");
+    if (isFleetActive) {
+      fetchAdminFleet();
+    } else {
+      fetchOnlineBoards();
+    }
     fetchSchoolName();
   }
 
   // Kamera açıksa ve başka sekmeye geçildiyse kapat
   if (tabName !== "teacher" && isScanning) {
     stopCameraScanner();
+  }
+}
+
+function switchAdminSubTab(subTabName) {
+  const fleetBtn = document.getElementById("adminSubFleetBtn");
+  const manageBtn = document.getElementById("adminSubManageBtn");
+  const fleetView = document.getElementById("adminSubFleetView");
+  const manageView = document.getElementById("adminSubManageView");
+
+  if (!fleetBtn || !manageBtn || !fleetView || !manageView) return;
+
+  fleetBtn.classList.remove("active");
+  manageBtn.classList.remove("active");
+  fleetView.classList.remove("active");
+  manageView.classList.remove("active");
+
+  if (subTabName === "fleet") {
+    fleetBtn.classList.add("active");
+    fleetView.classList.add("active");
+    fetchAdminFleet();
+  } else if (subTabName === "manage") {
+    manageBtn.classList.add("active");
+    manageView.classList.add("active");
+    fetchOnlineBoards();
+    fetchSchoolName();
   }
 }
 
@@ -565,10 +591,10 @@ function renderAdminBoardFleet(boards) {
 }
 
 async function openScreenshotModal(boardId, boardName) {
-  const adminPin = getAdminPinValue("fleetAdminPin");
+  const adminPin = getAdminPinValue("adminPin");
   if (!adminPin) {
     showToast("Lütfen yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    const pinEl = document.getElementById("fleetAdminPin") || document.getElementById("adminPin");
+    const pinEl = document.getElementById("adminPin");
     if (pinEl) pinEl.focus();
     return;
   }
@@ -705,10 +731,10 @@ function confirmBulkUpdate() {
 }
 
 async function triggerSingleBoardUpdate(boardId, boardName) {
-  const adminPin = getAdminPinValue("fleetAdminPin");
+  const adminPin = getAdminPinValue("adminPin");
   if (!adminPin) {
     showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    const pinEl = document.getElementById("fleetAdminPin") || document.getElementById("adminPin");
+    const pinEl = document.getElementById("adminPin");
     if (pinEl) pinEl.focus();
     return;
   }

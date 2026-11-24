@@ -68,7 +68,6 @@
     <nav class="nav-tabs">
       <button class="tab-btn active" onclick="switchTab('teacher')">👨‍🏫 Öğretmen</button>
       <button class="tab-btn" onclick="switchTab('offline')">🔢 PIN</button>
-      <button class="tab-btn" onclick="switchTab('fleet')">🖥️ Tahtalar</button>
       <button class="tab-btn" onclick="switchTab('admin')">📢 İdare</button>
     </nav>
 
@@ -144,104 +143,109 @@
       </div>
     </section>
 
-    <!-- SEKME 3: CANLI TAHTALAR & EKRAN İZLEME -->
-    <section id="fleetTab" class="tab-content">
-      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
-        <div class="input-group" style="margin-bottom: 0;">
-          <label for="fleetAdminPin">🔑 İdare Giriş Kodu:</label>
-          <input type="password" id="fleetAdminPin" placeholder="Örn: 9999" maxlength="8" inputmode="numeric" oninput="syncAdminPin('fleetAdminPin')">
-          <small class="hint">Ekran izleme ve tekil güncelleme için gereklidir (İdare sekmesiyle ortak hatırlanır).</small>
-        </div>
-      </div>
-
-      <div class="card admin-card">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom: 4px;">
-          <h3 style="margin:0;">🖥️ Canlı Tahtalar & Ekran İzleme</h3>
-          <button type="button" class="btn-refresh-fleet" title="Yenile" onclick="fetchAdminFleet()">🔄 Yenile</button>
-        </div>
-        <p class="hint">Tahtanın o anki ekranını görmek için <strong>📸 Ekranı Gör</strong>, güncellemek için <strong>🔄 Güncelle</strong> butonuna dokunun.</p>
-
-        <div id="adminFleetContainer" class="fleet-grid">
-          <div style="text-align:center; padding:18px; color:#94a3b8;">Tahtalar taranıyor...</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SEKME 4: MÜDÜR / İDARE YÖNETİM & ANONS PANELİ -->
+    <!-- SEKME 3: MÜDÜR / İDARE YÖNETİM & ANONS PANELİ -->
     <section id="adminTab" class="tab-content">
       <!-- İdare PIN Doğrulama Girişi -->
-      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+      <div class="card admin-card mb-3" style="margin-bottom: 12px;">
         <div class="input-group" style="margin-bottom: 0;">
           <label for="adminPin">🔑 İdare Giriş Kodu:</label>
           <input type="password" id="adminPin" placeholder="Örn: 9999" maxlength="8" inputmode="numeric" oninput="syncAdminPin('adminPin')">
-          <small class="hint">İdare ve yönetim işlemleri için gereklidir (tarayıcınızda hatırlanır).</small>
+          <small class="hint">Ekran izleme, güncelleme ve anons işlemleri için gereklidir (tarayıcınızda hatırlanır).</small>
         </div>
       </div>
 
-      <!-- KART 1: TOPLU TAHTA YÖNETİMİ -->
-      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
-        <h3>⚡ Toplu Tahta Yönetimi</h3>
-        <p class="hint">Okuldaki tüm akıllı tahtaları tek dokunuşla eşzamanlı yönetin.</p>
-
-        <div class="action-buttons-grid">
-          <button type="button" class="btn btn-warning" onclick="triggerBulkAction('lock')">
-            🔒 Tüm Tahtaları Kilitle
-          </button>
-          <button type="button" class="btn btn-power" onclick="confirmBulkPoweroff()">
-            🛑 Tüm Tahtaları Kapat
-          </button>
-          <button type="button" class="btn btn-primary" onclick="triggerBulkAction('unlock')" style="background: #10b981;">
-            🔓 Tüm Tahtaları Aç
-          </button>
-          <button type="button" class="btn btn-secondary" onclick="cleanupOfflineBoards()" style="background: #334155;">
-            🗑️ Çevrimdışıları Temizle
-          </button>
-          <button type="button" class="btn btn-bulk-update" onclick="confirmBulkUpdate()">
-            🔄 Tüm Tahtaları Güncelle
-          </button>
-        </div>
-      </div>
-
-      <!-- KART 2: MÜDÜR DUYURU & ANONS PANELİ -->
-      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
-        <h3>📢 Mavi Işıklı Kayan Duyuru</h3>
-        <p class="hint">Tahtaların en üstünde kayan LED bant duyurusu yayınlar.</p>
-
-        <div class="input-group">
-          <label for="adminTarget">Yayınlanacak Hedef:</label>
-          <select id="adminTarget">
-            <option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>
-          </select>
-        </div>
-
-        <div class="input-group">
-          <label for="adminMessage">Duyuru Metni:</label>
-          <textarea id="adminMessage" rows="3" placeholder="Örn: Sayın öğretmenlerimiz, 3. ders bitiminde öğretmenler odasında kısa bir toplantı yapılacaktır."></textarea>
-        </div>
-
-        <div class="input-group">
-          <label for="adminDuration">Ekranda Kalma Süresi (Saniye):</label>
-          <input type="number" id="adminDuration" value="60" min="10" max="3600">
-        </div>
-
-        <button class="btn btn-blue" onclick="sendBroadcast()">
-          📢 Mavi Işıklı Duyuruyu Yayınla
+      <!-- İdare İçi Alt Segment (Hap Butonlar) -->
+      <div class="admin-sub-tabs">
+        <button id="adminSubFleetBtn" class="admin-sub-btn active" type="button" onclick="switchAdminSubTab('fleet')">
+          🖥️ Canlı Tahtalar
+        </button>
+        <button id="adminSubManageBtn" class="admin-sub-btn" type="button" onclick="switchAdminSubTab('manage')">
+          ⚡ Toplu Yönetim & Duyuru
         </button>
       </div>
 
-      <!-- KART 4: OKUL / KURUM ADI BELİRLEME -->
-      <div class="card admin-card">
-        <h3>🏫 Okul / Kurum Adı Belirleme</h3>
-        <p class="hint">Tüm akıllı tahtaların üst bandındaki kurum adını tek tıkla toplu olarak güncelleyin.</p>
+      <!-- ALT SEKME A: CANLI TAHTALAR & EKRAN İZLEME -->
+      <div id="adminSubFleetView" class="admin-sub-view active">
+        <div class="card admin-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom: 4px;">
+            <h3 style="margin:0;">🖥️ Canlı Tahtalar & Ekran İzleme</h3>
+            <button type="button" class="btn-refresh-fleet" title="Yenile" onclick="fetchAdminFleet()">🔄 Yenile</button>
+          </div>
+          <p class="hint">Tahtanın o anki ekranını görmek için <strong>📸 Ekranı Gör</strong>, güncellemek için <strong>🔄 Güncelle</strong> butonuna dokunun.</p>
 
-        <div class="input-group">
-          <label for="schoolNameInput">Kurum Adı (Tüm Tahtalar):</label>
-          <input type="text" id="schoolNameInput" placeholder="Örn: Şehit Murat Akdemir Anadolu Lisesi">
+          <div id="adminFleetContainer" class="fleet-grid">
+            <div style="text-align:center; padding:18px; color:#94a3b8;">Tahtalar taranıyor...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ALT SEKME B: TOPLU YÖNETİM, DUYURU & KURUM ADI -->
+      <div id="adminSubManageView" class="admin-sub-view">
+        <!-- KART 1: TOPLU TAHTA YÖNETİMİ -->
+        <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+          <h3>⚡ Toplu Tahta Yönetimi</h3>
+          <p class="hint">Okuldaki tüm akıllı tahtaları tek dokunuşla eşzamanlı yönetin.</p>
+
+          <div class="action-buttons-grid">
+            <button type="button" class="btn btn-warning" onclick="triggerBulkAction('lock')">
+              🔒 Tüm Tahtaları Kilitle
+            </button>
+            <button type="button" class="btn btn-power" onclick="confirmBulkPoweroff()">
+              🛑 Tüm Tahtaları Kapat
+            </button>
+            <button type="button" class="btn btn-primary" onclick="triggerBulkAction('unlock')" style="background: #10b981;">
+              🔓 Tüm Tahtaları Aç
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="cleanupOfflineBoards()" style="background: #334155;">
+              🗑️ Çevrimdışıları Temizle
+            </button>
+            <button type="button" class="btn btn-bulk-update" onclick="confirmBulkUpdate()">
+              🔄 Tüm Tahtaları Güncelle
+            </button>
+          </div>
         </div>
 
-        <button type="button" class="btn btn-primary" onclick="sendSchoolNameUpdate()" style="background: #10b981;">
-          💾 Kurum Adını Tüm Tahtalara Gönder & Kaydet
-        </button>
+        <!-- KART 2: MÜDÜR DUYURU & ANONS PANELİ -->
+        <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+          <h3>📢 Mavi Işıklı Kayan Duyuru</h3>
+          <p class="hint">Tahtaların en üstünde kayan LED bant duyurusu yayınlar.</p>
+
+          <div class="input-group">
+            <label for="adminTarget">Yayınlanacak Hedef:</label>
+            <select id="adminTarget">
+              <option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="adminMessage">Duyuru Metni:</label>
+            <textarea id="adminMessage" rows="3" placeholder="Örn: Sayın öğretmenlerimiz, 3. ders bitiminde öğretmenler odasında kısa bir toplantı yapılacaktır."></textarea>
+          </div>
+
+          <div class="input-group">
+            <label for="adminDuration">Ekranda Kalma Süresi (Saniye):</label>
+            <input type="number" id="adminDuration" value="60" min="10" max="3600">
+          </div>
+
+          <button class="btn btn-blue" onclick="sendBroadcast()">
+            📢 Mavi Işıklı Duyuruyu Yayınla
+          </button>
+        </div>
+
+        <!-- KART 3: OKUL / KURUM ADI BELİRLEME -->
+        <div class="card admin-card">
+          <h3>🏫 Okul / Kurum Adı Belirleme</h3>
+          <p class="hint">Tüm akıllı tahtaların üst bandındaki kurum adını tek tıkla toplu olarak güncelleyin.</p>
+
+          <div class="input-group">
+            <label for="schoolNameInput">Kurum Adı (Tüm Tahtalar):</label>
+            <input type="text" id="schoolNameInput" placeholder="Örn: Şehit Murat Akdemir Anadolu Lisesi">
+          </div>
+
+          <button type="button" class="btn btn-primary" onclick="sendSchoolNameUpdate()" style="background: #10b981;">
+            💾 Kurum Adını Tüm Tahtalara Gönder & Kaydet
+          </button>
+        </div>
       </div>
     </section>
 
