@@ -145,6 +145,7 @@ function switchAdminSubTab(subTabName) {
 // -------------------------------------------------------------
 async function fetchOnlineBoards() {
   const adminTarget = document.getElementById("adminTarget");
+  const adminFileTarget = document.getElementById("adminFileTarget");
 
   try {
     const res = await fetch("/api/boards?online_only=true");
@@ -154,21 +155,31 @@ async function fetchOnlineBoards() {
       if (adminTarget) {
         adminTarget.innerHTML = '<option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>';
       }
+      if (adminFileTarget) {
+        adminFileTarget.innerHTML = '<option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>';
+      }
 
       // Sadece ve sadece çevrimiçi (online) tahtaları göster
       const onlineBoards = data.boards.filter(b => b.online);
       cachedOnlineBoards = onlineBoards;
 
-      if (adminTarget) {
-        onlineBoards.forEach(b => {
-          const displayName = b.name || b.id;
-          // Müdür paneli için hedef
+      onlineBoards.forEach(b => {
+        const displayName = b.name || b.id;
+        // Müdür duyuru hedefi
+        if (adminTarget) {
           const adminOpt = document.createElement("option");
           adminOpt.value = b.id;
           adminOpt.textContent = `🖥️ ${displayName}`;
           adminTarget.appendChild(adminOpt);
-        });
-      }
+        }
+        // Müdür dosya gönderme hedefi
+        if (adminFileTarget) {
+          const fileOpt = document.createElement("option");
+          fileOpt.value = b.id;
+          fileOpt.textContent = `🖥️ ${displayName}`;
+          adminFileTarget.appendChild(fileOpt);
+        }
+      });
 
       // 1A Öğretmen dokunmatik sınıf kartlarını & 2A bilgi rozetini güncelle
       renderTeacherBoardGrid(onlineBoards);
@@ -767,6 +778,127 @@ async function clearBroadcast() {
   } catch (err) {
     showToast("Sunucu hatası: " + err, "error");
   }
+}
+
+// -------------------------------------------------------------
+// 📁 Yönetici Masaüstüne Dosya Gönderme
+// -------------------------------------------------------------
+function formatFileSize(bytes) {
+  if (!bytes || bytes < 1024) return `${bytes || 0} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(2)} MB`;
+}
+
+function onAdminFileSelected() {
+  const input = document.getElementById("adminFileInput");
+  const info = document.getElementById("adminFileInfo");
+  if (!input || !info) return;
+
+  const file = input.files && input.files[0];
+  if (!file) {
+    info.textContent = "📎 PDF, PPTX, DOCX, MP3 veya küçük video seçin (Maks. 25 MB)";
+    info.classList.remove("has-file");
+    return;
+  }
+  info.textContent = `📄 ${file.name} (${formatFileSize(file.size)})`;
+  info.classList.add("has-file");
+}
+
+function sendFileToBoards() {
+  const adminPin = getAdminPinValue("adminPin");
+  const target = document.getElementById("adminFileTarget")?.value || "all";
+  const fileInput = document.getElementById("adminFileInput");
+  const openAfter = Boolean(document.getElementById("adminFileOpenAfter")?.checked);
+  const btn = document.getElementById("btnSendFile");
+  const progressWrap = document.getElementById("fileUploadProgressWrap");
+  const progressBar = document.getElementById("fileUploadProgressBar");
+  const progressText = document.getElementById("fileUploadProgressText");
+
+  if (!adminPin) {
+    showToast("Lütfen İdare PIN kodunu girin!", "error");
+    const pinEl = document.getElementById("adminPin");
+    if (pinEl) pinEl.focus();
+    return;
+  }
+
+  const file = fileInput && fileInput.files && fileInput.files[0];
+  if (!file) {
+    showToast("Lütfen gönderilecek dosyayı seçin!", "error");
+    return;
+  }
+
+  const MAX_BYTES = 25 * 1024 * 1024;
+  if (file.size > MAX_BYTES) {
+    showToast(`Dosya çok büyük (${formatFileSize(file.size)})! En fazla 25 MB desteklenir.`, "error");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("admin_pin", adminPin);
+  formData.append("target", target);
+  formData.append("open_after", openAfter ? "true" : "false");
+  formData.append("file", file);
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Yükleniyor...";
+  }
+  if (progressWrap) progressWrap.classList.remove("hidden");
+  if (progressBar) progressBar.style.width = "0%";
+  if (progressText) progressText.textContent = "Yükleniyor: %0";
+
+  const resetUploadUI = () => {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "📤 Masaüstüne Gönder";
+    }
+    setTimeout(() => {
+      if (progressWrap) progressWrap.classList.add("hidden");
+    }, 1500);
+  };
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/api/files/send", true);
+  xhr.timeout = 120000;
+
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) {
+      const pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+      if (progressBar) progressBar.style.width = `${pct}%`;
+      if (progressText) progressText.textContent = `Yükleniyor: %${pct} (${formatFileSize(e.loaded)} / ${formatFileSize(e.total)})`;
+    }
+  };
+
+  xhr.onload = () => {
+    let data = {};
+    try {
+      data = JSON.parse(xhr.responseText || "{}");
+    } catch (e) {}
+
+    if (xhr.status >= 200 && xhr.status < 300 && data.success) {
+      if (progressBar) progressBar.style.width = "100%";
+      if (progressText) progressText.textContent = "✅ Tahtalara iletildi!";
+      showToast(data.message || "Dosya gönderildi!", "success");
+      if (fileInput) fileInput.value = "";
+      onAdminFileSelected();
+    } else {
+      showToast(data.detail || "Dosya gönderilemedi!", "error");
+    }
+    resetUploadUI();
+  };
+
+  xhr.onerror = () => {
+    showToast("Dosya yüklenirken bağlantı hatası oluştu!", "error");
+    resetUploadUI();
+  };
+
+  xhr.ontimeout = () => {
+    showToast("Dosya yükleme zaman aşımına uğradı!", "error");
+    resetUploadUI();
+  };
+
+  xhr.send(formData);
 }
 
 // -------------------------------------------------------------

@@ -2,12 +2,13 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import time
 import uuid
 from urllib.parse import urlparse
 from typing import Dict, List, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +21,28 @@ if CURRENT_DIR not in sys.path:
 DATA_DIR = os.path.join(CURRENT_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+UPLOAD_TTL_SECONDS = 900  # 15 dakika
+MAX_STORED_UPLOADS = 10
+ALLOWED_FILE_EXTENSIONS = {
+    ".pdf", ".ppt", ".pptx", ".doc", ".docx", ".xls", ".xlsx",
+    ".mp3", ".wav", ".ogg", ".m4a", ".mp4", ".webm", ".mkv", ".mov",
+    ".jpg", ".jpeg", ".png", ".txt", ".zip",
+}
+
+
+def sanitize_filename(name: str) -> str:
+    """Kullanıcı dosya adından yol traversal ve geçersiz karakterleri temizler (maks. 120 karakter)."""
+    base = os.path.basename((name or "").replace("\\", "/")).strip()
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", base)
+    stem, ext = os.path.splitext(cleaned)
+    stem = stem.strip(" .") or "dosya"
+    ext = re.sub(r'[^A-Za-z0-9.]', "", ext.lower())
+    max_stem_len = max(1, 120 - len(ext))
+    return f"{stem[:max_stem_len]}{ext}"
 
 try:
     import config
@@ -63,6 +86,36 @@ class BoardConnectionManager:
         self.pending_screenshots: Dict[str, asyncio.Future] = {}
         # Sunucuda tutulan aktif duyuru (yeni bağlanan tahtalara da iletilir)
         self.active_announcement: Optional[dict] = None
+        # Geçici olarak masaüstüne gönderilen dosyalar (file_id -> metadata)
+        self.uploaded_files: Dict[str, dict] = {}
+
+    def cleanup_expired_uploads(self):
+        """Süresi (15 dk) dolmuş veya saklama limitini aşan en eski yükleme dosyalarını temizler."""
+        now = time.time()
+        expired_ids = [
+            f_id for f_id, info in list(self.uploaded_files.items())
+            if (now - info.get("created_at", 0) > UPLOAD_TTL_SECONDS)
+            or not os.path.isfile(info.get("path", ""))
+        ]
+        for f_id in expired_ids:
+            info = self.uploaded_files.pop(f_id, None)
+            if info and info.get("path") and os.path.isfile(info["path"]):
+                try:
+                    os.remove(info["path"])
+                except Exception:
+                    pass
+
+        while len(self.uploaded_files) > MAX_STORED_UPLOADS:
+            oldest_id = min(
+                self.uploaded_files.keys(),
+                key=lambda k: self.uploaded_files[k].get("created_at", 0)
+            )
+            info = self.uploaded_files.pop(oldest_id, None)
+            if info and info.get("path") and os.path.isfile(info["path"]):
+                try:
+                    os.remove(info["path"])
+                except Exception:
+                    pass
 
     def load_school_name(self) -> str:
         if os.path.exists(SETTINGS_FILE):
@@ -823,6 +876,159 @@ async def update_single_board(req: BoardUpdateRequest):
         "board_id": target_id,
         "message": f"'{manager.board_names.get(target_id, target_id)}' tahtasına uzaktan güncelleme komutu gönderildi! 🔄"
     }
+
+# -------------------------------------------------------------
+# 📁 Yönetici Panelinden Tahta Masaüstüne Dosya Gönderme API'leri
+# -------------------------------------------------------------
+@app.post("/api/files/send")
+async def send_file_to_boards(
+    admin_pin: str = Form(...),
+    target: str = Form("all"),
+    open_after: bool = Form(False),
+    file: UploadFile = File(...),
+):
+    """Telefondan yüklenen PDF/Office/medya dosyasını hedef tahtaların masaüstüne aktarır."""
+    if admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    target_id = None
+    if target == "all":
+        if len(manager.active_connections) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Şu anda bağlı çevrimiçi akıllı tahta bulunmuyor."
+            )
+    else:
+        target_id = manager.find_board(target)
+        if not target_id or not manager.is_connected(target_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"'{target}' tahtası şu anda çevrimdışı."
+            )
+
+    safe_name = sanitize_filename(file.filename or "")
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in ALLOWED_FILE_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Desteklenmeyen dosya türü! İzin verilenler: PDF, PPTX, DOCX, XLSX, MP3, MP4 vb."
+        )
+
+    manager.cleanup_expired_uploads()
+
+    file_id = str(uuid.uuid4())[:12]
+    disk_path = os.path.join(UPLOAD_DIR, f"{file_id}_{safe_name}")
+    total_bytes = 0
+
+    try:
+        with open(disk_path, "wb") as out_f:
+            while True:
+                chunk = await file.read(65536)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_UPLOAD_BYTES:
+                    out_f.close()
+                    if os.path.isfile(disk_path):
+                        os.remove(disk_path)
+                    raise HTTPException(
+                        status_code=413,
+                        detail="Dosya boyutu en fazla 25 MB olabilir!"
+                    )
+                out_f.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as e:
+        if os.path.isfile(disk_path):
+            try:
+                os.remove(disk_path)
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Dosya sunucuya kaydedilemedi: {e}"
+        )
+    finally:
+        await file.close()
+
+    if total_bytes == 0:
+        if os.path.isfile(disk_path):
+            os.remove(disk_path)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Boş dosya gönderilemez!"
+        )
+
+    manager.uploaded_files[file_id] = {
+        "file_id": file_id,
+        "filename": safe_name,
+        "path": disk_path,
+        "size_bytes": total_bytes,
+        "created_at": time.time(),
+    }
+    manager.cleanup_expired_uploads()
+
+    ws_payload = {
+        "action": "receive_file",
+        "file_id": file_id,
+        "filename": safe_name,
+        "size_bytes": total_bytes,
+        "download_path": f"/api/files/download/{file_id}",
+        "open_after": bool(open_after),
+        "timestamp": time.time(),
+    }
+
+    if target == "all":
+        count = await manager.broadcast_all(ws_payload)
+        if count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Şu anda bağlı çevrimiçi akıllı tahta bulunmuyor."
+            )
+        msg = f"'{safe_name}' dosyası {count} tahtanın masaüstüne gönderildi! 📁"
+    else:
+        sent = await manager.send_to_board(target_id, ws_payload)
+        if not sent:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Dosya bildirimi tahtaya iletilemedi."
+            )
+        count = 1
+        board_name = manager.board_names.get(target_id, target_id)
+        msg = f"'{safe_name}' dosyası '{board_name}' tahtasının masaüstüne gönderildi! 📁"
+
+    return {
+        "success": True,
+        "file_id": file_id,
+        "filename": safe_name,
+        "size_bytes": total_bytes,
+        "count": count,
+        "message": msg,
+    }
+
+
+@app.get("/api/files/download/{file_id}")
+async def download_uploaded_file(file_id: str):
+    """Tahtaların masaüstüne kaydetmek üzere geçici dosyayı indirir."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", file_id or ""):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dosya bulunamadı.")
+
+    manager.cleanup_expired_uploads()
+    info = manager.uploaded_files.get(file_id)
+    if not info or not os.path.isfile(info.get("path", "")):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Dosya bulunamadı veya indirme süresi doldu."
+        )
+
+    return FileResponse(
+        info["path"],
+        filename=info["filename"],
+        media_type="application/octet-stream",
+    )
 
 # -------------------------------------------------------------
 # 📂 Statik Dosyalar & PWA (Manifest & Service Worker)

@@ -36,6 +36,7 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         manager.board_versions.clear()
         manager.board_update_msg.clear()
         manager.active_announcement = None
+        manager.uploaded_files.clear()
 
     # -------------------------------------------------------------------------
     # 1. Statik Dosyalar (PWA Web Arayüzü) Testi
@@ -52,7 +53,9 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertIn("teacherPinToggleBtn", res_index.text)
         self.assertIn("btnToggleLiveWatch", res_index.text)
         self.assertIn("btnTogglePreviewWall", res_index.text)
-        self.assertIn("v0.5.0", res_index.text)
+        self.assertIn("adminFileInput", res_index.text)
+        self.assertIn("btnSendFile", res_index.text)
+        self.assertIn("v0.6.0", res_index.text)
         self.assertNotIn("customBoardInput", res_index.text)
         self.assertNotIn("boardSelect", res_index.text)
 
@@ -66,6 +69,7 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertIn("selectTeacherBoard", res_js.text)
         self.assertIn("toggleLiveWatch", res_js.text)
         self.assertIn("togglePreviewWall", res_js.text)
+        self.assertIn("sendFileToBoards", res_js.text)
 
         # PWA Manifest & Service Worker & İkon testleri
         res_manifest = self.client.get("/manifest.json")
@@ -682,18 +686,122 @@ class TestEtapSmartLockSystem(unittest.TestCase):
                 finally:
                     manager.send_to_board = orig_send
 
-        # 3. version.json ve istemci APP_VERSION uyumu (v0.5.0)
+        # 3. version.json ve istemci APP_VERSION uyumu (v0.6.0)
         with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as vf:
             ver_json = _json.load(vf)
-        self.assertEqual(ver_json.get("version"), "v0.5.0")
+        self.assertEqual(ver_json.get("version"), "v0.6.0")
 
         spec = importlib.util.spec_from_file_location(
-            "kilit_ekrani_v05",
+            "kilit_ekrani_v06",
             os.path.join(PROJECT_ROOT, "client-tahta", "kilit_ekrani.py")
         )
         mod_kilit = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod_kilit)
-        self.assertEqual(mod_kilit.APP_VERSION, "v0.5.0")
+        self.assertEqual(mod_kilit.APP_VERSION, "v0.6.0")
+        self.assertEqual(ver_json.get("version"), mod_kilit.APP_VERSION)
+
+    # -------------------------------------------------------------------------
+    # 11. Yönetici Panelinden Tahta Masaüstüne Dosya Gönderme Testi (v0.6.0)
+    # -------------------------------------------------------------------------
+    def test_11_admin_file_push_to_desktop(self):
+        """Yönetici dosya yükleme (POST /api/files/send), indirme (GET /api/files/download/{id}) ve istemci yardımcılarının güvenliğini test eder."""
+        import importlib.util
+        import tempfile
+        import shutil
+
+        # 1. Hatalı PIN ile 401 dönmeli
+        res_unauth = self.client.post(
+            "/api/files/send",
+            data={"admin_pin": "0000", "target": "all", "open_after": "false"},
+            files={"file": ("ders.pdf", b"%PDF-1.4", "application/pdf")},
+        )
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # 2. Çevrimdışı tekil hedef için 404 dönmeli
+        res_offline = self.client.post(
+            "/api/files/send",
+            data={"admin_pin": config.ADMIN_PIN, "target": "Yok-Tahta", "open_after": "false"},
+            files={"file": ("ders.pdf", b"%PDF-1.4", "application/pdf")},
+        )
+        self.assertEqual(res_offline.status_code, 404)
+
+        uploaded_id = None
+        pdf_bytes = b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n%%EOF"
+        try:
+            with self.client.websocket_connect("/ws/board/file-b1?name=9-A&version=v0.6.0") as ws:
+                ws.receive_json()  # welcome
+
+                # 3. Yasaklı uzantı (.exe) 400 ile engellenmeli
+                res_bad_ext = self.client.post(
+                    "/api/files/send",
+                    data={"admin_pin": config.ADMIN_PIN, "target": "9-A", "open_after": "false"},
+                    files={"file": ("zararli.exe", b"MZ...", "application/octet-stream")},
+                )
+                self.assertEqual(res_bad_ext.status_code, 400)
+                self.assertIn("Desteklenmeyen dosya türü", res_bad_ext.json()["detail"])
+
+                # 4. Geçerli PDF yükleme + open_after=true
+                res_ok = self.client.post(
+                    "/api/files/send",
+                    data={"admin_pin": config.ADMIN_PIN, "target": "9-A", "open_after": "true"},
+                    files={"file": ("sinav_programi.pdf", pdf_bytes, "application/pdf")},
+                )
+                self.assertEqual(res_ok.status_code, 200)
+                payload = res_ok.json()
+                self.assertTrue(payload["success"])
+                self.assertEqual(payload["filename"], "sinav_programi.pdf")
+                self.assertEqual(payload["size_bytes"], len(pdf_bytes))
+                self.assertEqual(payload["count"], 1)
+                uploaded_id = payload["file_id"]
+
+                # Tahta WebSocket bildirimini almalı
+                file_cmd = ws.receive_json()
+                self.assertEqual(file_cmd.get("action"), "receive_file")
+                self.assertEqual(file_cmd.get("file_id"), uploaded_id)
+                self.assertEqual(file_cmd.get("filename"), "sinav_programi.pdf")
+                self.assertEqual(file_cmd.get("download_path"), f"/api/files/download/{uploaded_id}")
+                self.assertIs(file_cmd.get("open_after"), True)
+
+                # Tahta GET indirme uç noktasından birebir aynı baytları çekebilmeli
+                res_dl = self.client.get(file_cmd["download_path"])
+                self.assertEqual(res_dl.status_code, 200)
+                self.assertEqual(res_dl.content, pdf_bytes)
+        finally:
+            if uploaded_id and uploaded_id in manager.uploaded_files:
+                info = manager.uploaded_files.pop(uploaded_id, None)
+                if info and info.get("path") and os.path.isfile(info["path"]):
+                    try:
+                        os.remove(info["path"])
+                    except Exception:
+                        pass
+
+        # 5. İstemci yardımcıları doğrulaması
+        spec = importlib.util.spec_from_file_location(
+            "kilit_ekrani_v06_file",
+            os.path.join(PROJECT_ROOT, "client-tahta", "kilit_ekrani.py")
+        )
+        mod_kilit = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod_kilit)
+        self.assertEqual(mod_kilit.APP_VERSION, "v0.6.0")
+        self.assertEqual(
+            mod_kilit.derive_http_base_url("wss://etap-smaart-lock.onrender.com/ws/board/"),
+            "https://etap-smaart-lock.onrender.com"
+        )
+        self.assertEqual(
+            mod_kilit.derive_http_base_url("ws://192.168.1.25:8000/ws/board"),
+            "http://192.168.1.25:8000"
+        )
+
+        tmp_desk = tempfile.mkdtemp(prefix="etap_desk_")
+        try:
+            p1 = mod_kilit.resolve_unique_desktop_path(tmp_desk, "../ders.pdf")
+            self.assertEqual(os.path.basename(p1), "ders.pdf")
+            with open(p1, "wb") as f:
+                f.write(b"1")
+            p2 = mod_kilit.resolve_unique_desktop_path(tmp_desk, "ders.pdf")
+            self.assertEqual(os.path.basename(p2), "ders (1).pdf")
+        finally:
+            shutil.rmtree(tmp_desk, ignore_errors=True)
 
 
 if __name__ == "__main__":

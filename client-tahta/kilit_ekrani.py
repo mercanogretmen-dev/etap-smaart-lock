@@ -11,6 +11,7 @@ import sys
 import os
 import time
 import json
+import re
 import configparser
 import asyncio
 import hashlib
@@ -42,7 +43,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v0.5.0"
+APP_VERSION = "v0.6.0"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -488,6 +489,155 @@ def open_browser_url(url: str):
             webbrowser.open(url)
         except Exception:
             pass
+
+
+# -------------------------------------------------------------
+# 📁 Uzaktan Masaüstüne Dosya Alma & Açma Yardımcıları
+# -------------------------------------------------------------
+def derive_http_base_url(ws_url: str) -> str:
+    """WebSocket adresinden (wss://.../ws/board) HTTP taban URL'sini (https://...) üretir."""
+    parsed = urlparse((ws_url or "").strip())
+    if not parsed.netloc:
+        return ""
+    if parsed.scheme == "wss":
+        http_scheme = "https"
+    elif parsed.scheme == "ws":
+        http_scheme = "http"
+    elif parsed.scheme in ("http", "https"):
+        http_scheme = parsed.scheme
+    else:
+        http_scheme = "https"
+    return f"{http_scheme}://{parsed.netloc}"
+
+
+def get_user_desktop_dir() -> str:
+    """Pardus Linux (~/Masaüstü / xdg-user-dir) veya Windows Masaüstü klasörünü bulur."""
+    home = os.path.expanduser("~")
+    if sys.platform != "win32":
+        try:
+            out = subprocess.check_output(
+                ["xdg-user-dir", "DESKTOP"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+                timeout=2,
+            ).strip()
+            if out and os.path.normpath(out) != os.path.normpath(home):
+                os.makedirs(out, exist_ok=True)
+                return out
+        except Exception:
+            pass
+
+    try:
+        qt_desktop = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation)
+        if qt_desktop and os.path.normpath(qt_desktop) != os.path.normpath(home):
+            os.makedirs(qt_desktop, exist_ok=True)
+            return qt_desktop
+    except Exception:
+        pass
+
+    tr_desktop = os.path.join(home, "Masaüstü")
+    en_desktop = os.path.join(home, "Desktop")
+    chosen = tr_desktop if (sys.platform != "win32" and os.path.isdir(tr_desktop)) else en_desktop
+    os.makedirs(chosen, exist_ok=True)
+    return chosen
+
+
+def resolve_unique_desktop_path(desktop_dir: str, filename: str) -> str:
+    """Aynı isimli dosyayı ezmemek için güvenli ve çakışmasız tam masaüstü dosya yolu üretir."""
+    base = os.path.basename((filename or "").replace("\\", "/")).strip()
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", base)
+    stem, ext = os.path.splitext(cleaned)
+    stem = stem.strip(" .") or "dosya"
+    ext = re.sub(r'[^A-Za-z0-9.]', "", ext)
+    max_stem = max(1, 120 - len(ext))
+    stem = stem[:max_stem]
+
+    candidate = os.path.join(desktop_dir, f"{stem}{ext}")
+    counter = 1
+    while os.path.exists(candidate):
+        candidate = os.path.join(desktop_dir, f"{stem} ({counter}){ext}")
+        counter += 1
+    return candidate
+
+
+def open_local_file(file_path: str):
+    """Masaüstüne kaydedilen yerel dosyayı varsayılan uygulama ile açar."""
+    if not file_path or not os.path.exists(file_path):
+        return
+    try:
+        if sys.platform == "win32":
+            os.startfile(file_path)
+        else:
+            subprocess.Popen(["xdg-open", file_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print(f"[FILE] Dosya acma hatasi: {e}")
+
+
+class FileDownloadThread(QThread):
+    """Yönetici panelinden gönderilen dosyayı arka planda parçalar halinde masaüstüne indirir."""
+    progress_changed = pyqtSignal(int, str)
+    finished_ok = pyqtSignal(str, str, bool)
+    failed = pyqtSignal(str, str)
+
+    MAX_DOWNLOAD_BYTES = 30 * 1024 * 1024  # 30 MB emniyet sınırı
+
+    def __init__(self, download_url: str, dest_dir: str, filename: str, open_after: bool = False, parent=None):
+        super().__init__(parent)
+        self.download_url = download_url
+        self.dest_dir = dest_dir
+        self.filename = filename
+        self.open_after = bool(open_after)
+
+    def run(self):
+        import urllib.request
+        dest_path = ""
+        part_path = ""
+        try:
+            os.makedirs(self.dest_dir, exist_ok=True)
+            dest_path = resolve_unique_desktop_path(self.dest_dir, self.filename)
+            part_path = dest_path + ".part"
+
+            req = urllib.request.Request(
+                self.download_url,
+                headers={"User-Agent": f"TahtaKilitFileClient/{APP_VERSION}"}
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                total_header = resp.headers.get("Content-Length")
+                total_bytes = int(total_header) if total_header and total_header.isdigit() else 0
+                if total_bytes > self.MAX_DOWNLOAD_BYTES:
+                    raise ValueError("Dosya boyutu güvenlik sınırını (30 MB) aşıyor.")
+
+                downloaded = 0
+                last_reported_pct = -10
+                with open(part_path, "wb") as out_f:
+                    while True:
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        downloaded += len(chunk)
+                        if downloaded > self.MAX_DOWNLOAD_BYTES:
+                            raise ValueError("Dosya boyutu güvenlik sınırını (30 MB) aşıyor.")
+                        out_f.write(chunk)
+
+                        if total_bytes > 0:
+                            pct = min(99, int((downloaded * 100) / total_bytes))
+                            if pct - last_reported_pct >= 5:
+                                last_reported_pct = pct
+                                self.progress_changed.emit(pct, f"{self.filename} (%{pct})")
+                        elif downloaded == len(chunk):
+                            self.progress_changed.emit(50, f"{self.filename} indiriliyor...")
+
+            os.replace(part_path, dest_path)
+            saved_name = os.path.basename(dest_path)
+            self.progress_changed.emit(100, f"{saved_name} hazır")
+            self.finished_ok.emit(dest_path, saved_name, self.open_after)
+        except Exception as e:
+            if part_path and os.path.exists(part_path):
+                try:
+                    os.remove(part_path)
+                except Exception:
+                    pass
+            self.failed.emit(self.filename, str(e))
 
 
 # -------------------------------------------------------------
@@ -1416,14 +1566,14 @@ class DesktopUpdateBanner(QWidget):
         self.progress_bar.setValue(percent)
         self.lbl_msg.setText(f"%{percent} — {msg}")
 
-    def show_success(self, msg: str):
+    def show_success(self, msg: str, title: str = "✅ Güncelleme Tamamlandı"):
         self.progress_bar.setValue(100)
-        self.lbl_title.setText("✅ Güncelleme Tamamlandı")
+        self.lbl_title.setText(title)
         self.lbl_title.setStyleSheet("color: #34d399; border: none; background: transparent;")
         self.lbl_msg.setText(msg)
 
-    def show_error(self, err: str):
-        self.lbl_title.setText("⚠️ Güncelleme Hatası")
+    def show_error(self, err: str, title: str = "⚠️ Güncelleme Hatası"):
+        self.lbl_title.setText(title)
         self.lbl_title.setStyleSheet("color: #f87171; border: none; background: transparent;")
         self.lbl_msg.setText(err)
 
@@ -2881,9 +3031,11 @@ class LockScreenWindow(QMainWindow):
         self.desktop_announcement_card = None
         self.desktop_update_banner = None
         self.pending_open_url = None
+        self.pending_open_file = None
         self.current_announcement = None
         self.is_updating = False
         self.remote_update_thread = None
+        self.file_download_threads = []
 
         self.init_ui()
         self.init_network()
@@ -3559,6 +3711,12 @@ class LockScreenWindow(QMainWindow):
             self.pending_open_url = None
             QTimer.singleShot(600, lambda: open_browser_url(url_to_open))
 
+        # Eğer yönetici otomatik açılsın seçeneğiyle masaüstüne dosya gönderdiyse, kilit açılınca aç
+        if getattr(self, "pending_open_file", None):
+            path_to_open = self.pending_open_file
+            self.pending_open_file = None
+            QTimer.singleShot(700, lambda p=path_to_open: open_local_file(p))
+
         # Eğer aktif bir duyuru varsa, masaüstünde sağ altta kilit butonunun üstünde sabit kartı göster
         if hasattr(self, "current_announcement") and self.current_announcement:
             ann = self.current_announcement
@@ -3673,6 +3831,8 @@ class LockScreenWindow(QMainWindow):
             self.show_announcement(msg, duration, link_url=link_url, link_label=link_label)
         elif action == "clear_announcement":
             self.clear_announcements()
+        elif action == "receive_file":
+            self.start_file_receive(data)
 
     # -------------------------------------------------------------
     # 🔄 Merkezi Uzaktan & Otomatik Güncelleme Kontrolü
@@ -3890,6 +4050,83 @@ class LockScreenWindow(QMainWindow):
                 self.desktop_announcement_card.close_card()
             except Exception:
                 pass
+
+    def start_file_receive(self, data: dict):
+        """Sunucudan gelen yönetici dosya gönderimini masaüstüne arka planda indirir."""
+        download_path = (data.get("download_path") or "").strip()
+        filename = (data.get("filename") or "dosya").strip()
+        open_after = bool(data.get("open_after", False))
+        if not download_path:
+            return
+
+        if download_path.startswith("http://") or download_path.startswith("https://"):
+            full_url = download_path
+        else:
+            base_url = derive_http_base_url(self.sunucu_url)
+            if not base_url:
+                return
+            full_url = f"{base_url}{download_path}"
+
+        dest_dir = get_user_desktop_dir()
+        if not self.is_locked:
+            if not getattr(self, "desktop_update_banner", None):
+                self.desktop_update_banner = DesktopUpdateBanner()
+            self.desktop_update_banner.show_top_right("📥 İdare Dosya Gönderiyor", f"{filename} (%0)")
+
+        worker = FileDownloadThread(full_url, dest_dir, filename, open_after=open_after, parent=self)
+        worker.progress_changed.connect(self._on_file_progress)
+        worker.finished_ok.connect(self._on_file_received)
+        worker.failed.connect(self._on_file_failed)
+        worker.finished.connect(lambda w=worker: self._cleanup_file_thread(w))
+        self.file_download_threads.append(worker)
+        worker.start()
+
+    def _cleanup_file_thread(self, worker):
+        try:
+            if worker in self.file_download_threads:
+                self.file_download_threads.remove(worker)
+        except Exception:
+            pass
+
+    def _on_file_progress(self, percent: int, msg: str):
+        if not self.is_locked:
+            if not getattr(self, "desktop_update_banner", None):
+                self.desktop_update_banner = DesktopUpdateBanner()
+            if not self.desktop_update_banner.isVisible():
+                self.desktop_update_banner.show_top_right("📥 İdare Dosya Gönderiyor", msg)
+            self.desktop_update_banner.update_progress(percent, msg)
+
+    def _on_file_received(self, saved_path: str, filename: str, open_after: bool):
+        play_alert_sound()
+        if not self.is_locked:
+            if not getattr(self, "desktop_update_banner", None):
+                self.desktop_update_banner = DesktopUpdateBanner()
+            if not self.desktop_update_banner.isVisible():
+                self.desktop_update_banner.show_top_right("📁 İdare Dosya Gönderdi", filename)
+            self.desktop_update_banner.show_success(
+                f"Masaüstüne kaydedildi: {filename}",
+                title="📁 İdare Dosya Gönderdi",
+            )
+            QTimer.singleShot(6000, self._hide_update_ui)
+            if open_after:
+                QTimer.singleShot(300, lambda p=saved_path: open_local_file(p))
+        else:
+            self.banner.show_message(f"📁 Masaüstüne dosya gönderildi: {filename}", 25)
+            if open_after:
+                self.pending_open_file = saved_path
+
+    def _on_file_failed(self, filename: str, err: str):
+        print(f"[FILE] İndirme hatası ({filename}): {err}")
+        if not self.is_locked:
+            if not getattr(self, "desktop_update_banner", None):
+                self.desktop_update_banner = DesktopUpdateBanner()
+            if not self.desktop_update_banner.isVisible():
+                self.desktop_update_banner.show_top_right("⚠️ Dosya İndirme Hatası", filename)
+            self.desktop_update_banner.show_error(
+                f"{filename}: {err}",
+                title="⚠️ Dosya İndirilemedi",
+            )
+            QTimer.singleShot(5000, self._hide_update_ui)
 
     def handle_poweroff(self):
         """Tahtanın gücünü kapatır (shutdown)."""

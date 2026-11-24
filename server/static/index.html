@@ -267,7 +267,44 @@
           </div>
         </div>
 
-        <!-- KART 3: OKUL / KURUM ADI BELİRLEME -->
+        <!-- KART 3: MASAÜSTÜNE DOSYA GÖNDER (PDF, SUNUM, BELGE, MEDYA) -->
+        <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+          <h3>📁 Masaüstüne Dosya Gönder</h3>
+          <p class="hint">Telefondaki PDF, sunum (PPTX), Word, ses veya küçük videoları doğrudan tahtaların masaüstüne aktarır.</p>
+
+          <div class="input-group">
+            <label for="adminFileTarget">Gönderilecek Hedef:</label>
+            <select id="adminFileTarget">
+              <option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="adminFileInput">Dosya Seçin (Maks. 25 MB):</label>
+            <label for="adminFileInput" class="file-drop-zone">
+              <input type="file" id="adminFileInput" accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.mp3,.wav,.ogg,.m4a,.mp4,.webm,.mkv,.mov,.jpg,.jpeg,.png,.txt,.zip" onchange="onAdminFileSelected()">
+              <div id="adminFileInfo" class="file-selected-info">📎 PDF, PPTX, DOCX, MP3 veya küçük video seçin (Maks. 25 MB)</div>
+            </label>
+          </div>
+
+          <label class="file-checkbox-row" for="adminFileOpenAfter">
+            <input type="checkbox" id="adminFileOpenAfter">
+            <span>Masaüstü açıksa (veya kilit açılınca) dosyayı otomatik aç</span>
+          </label>
+
+          <div id="fileUploadProgressWrap" class="upload-progress-wrap hidden">
+            <div class="upload-progress-track">
+              <div id="fileUploadProgressBar" class="upload-progress-fill" style="width: 0%;"></div>
+            </div>
+            <div id="fileUploadProgressText" class="upload-progress-text">Yükleniyor: %0</div>
+          </div>
+
+          <button id="btnSendFile" type="button" class="btn btn-primary" onclick="sendFileToBoards()" style="background: linear-gradient(135deg, #0284c7, #2563eb);">
+            📤 Masaüstüne Gönder
+          </button>
+        </div>
+
+        <!-- KART 4: OKUL / KURUM ADI BELİRLEME -->
         <div class="card admin-card">
           <h3>🏫 Okul / Kurum Adı Belirleme</h3>
           <p class="hint">Tüm akıllı tahtaların üst bandındaki kurum adını tek tıkla toplu olarak güncelleyin.</p>
@@ -287,7 +324,7 @@
     <!-- Geliştirici Alt Bilgi Rozeti -->
     <footer style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; margin-top:8px; color:#94a3b8; font-size:0.78rem; border-top:1px solid rgba(56,189,248,0.15);">
       <img src="/icons/mercan_robotik_icon.png" alt="Mercan Robotik" style="width:24px; height:24px; border-radius:6px;">
-      <span>Geliştirici: <strong style="color:#38bdf8;">MERCAN</strong> <strong style="color:#ff5e4d;">ROBOTİK</strong> • 🛡️ ET Güvenliği Aktif • v0.5.0</span>
+      <span>Geliştirici: <strong style="color:#38bdf8;">MERCAN</strong> <strong style="color:#ff5e4d;">ROBOTİK</strong> • 🛡️ ET Güvenliği Aktif • v0.6.0</span>
     </footer>
 
     <!-- Güç Kapatma Onay Modalı -->

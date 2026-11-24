@@ -17,3 +17,4 @@ backups/
 *_preview.png
 # Ana kurulum deb paketleri depoda tutulur:
 !tahta-kilit*.deb
+server/data/uploads/
