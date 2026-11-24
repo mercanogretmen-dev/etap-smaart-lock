@@ -84,41 +84,23 @@
           <div id="qrReader" class="qr-reader hidden"></div>
         </div>
 
-        <div class="divider"><span>veya sınıf seçin</span></div>
-
-        <!-- 1A: Dokunmatik Sınıf Kartları & Hızlı Arama -->
-        <div class="input-group">
-          <div class="teacher-boards-header">
-            <div style="display:flex; align-items:center; gap:6px;">
-              <label for="boardSearchInput" style="margin:0;">Çevrimiçi Sınıflar</label>
-              <span id="onlineBoardCount" class="count-pill">0</span>
-            </div>
-            <button type="button" class="btn-refresh-sm" title="Yenile" onclick="fetchOnlineBoards()">🔄 Yenile</button>
-          </div>
-
-          <input type="search" id="boardSearchInput" class="board-search-input hidden" placeholder="🔍 Sınıf ara (Örn: 9-A, BT...)" oninput="filterTeacherBoards()">
-
-          <div id="teacherBoardGrid" class="teacher-board-grid">
-            <div class="board-grid-empty">Çevrimiçi tahtalar yükleniyor...</div>
-          </div>
-
-          <!-- 2A: Salt Okunur / Pasif Seçili Tahta Bilgi Rozeti -->
-          <div id="selectedBoardBadge" class="selected-board-badge empty">
-            <div class="selected-board-main">
-              <span id="selectedBoardTitle">👆 Yukarıdan bir sınıf seçin veya QR okutun</span>
+        <!-- 1B + 2A: Tek Birleşik Seçili Sınıf Kartı (Dokununca Alt Çekmece Açılır) -->
+        <button id="selectedBoardTrigger" type="button" class="board-picker-card empty" onclick="openBoardPickerSheet()">
+          <div class="board-picker-top">
+            <span id="selectedBoardTitle" class="board-picker-title">🖥️ Sınıf Seçin</span>
+            <div class="board-picker-right">
               <span id="selectedBoardStatus" class="selected-status-pill hidden"></span>
+              <span class="board-picker-chevron">▾</span>
             </div>
-            <div id="selectedBoardMeta" class="selected-board-meta hidden"></div>
           </div>
-        </div>
+          <div class="board-picker-bottom">
+            <span id="selectedBoardMeta" class="selected-board-meta">Dokunarak çevrimiçi tahtalardan seçin</span>
+            <span id="selectedBoardAction" class="board-picker-action">Seç</span>
+          </div>
+        </button>
 
-        <!-- Kompakt / Katlanabilir Öğretmen PIN Kodu -->
-        <div id="teacherPinCompactRow" class="pin-compact-row hidden">
-          <span>🔑 Öğretmen PIN Kayıtlı</span>
-          <button type="button" class="btn-pin-toggle" onclick="toggleTeacherPinEditor(true)">Değiştir</button>
-        </div>
-
-        <div id="teacherPinEditor" class="input-group">
+        <!-- Katlanabilir Öğretmen PIN Kodu (Sadece ilk girişte veya 'PIN' butonuna basılınca açılır) -->
+        <div id="teacherPinEditor" class="pin-editor-box hidden">
           <label for="teacherPin">Ortak Öğretmen PIN Kodu:</label>
           <div class="pin-input-row">
             <input type="password" id="teacherPin" placeholder="Örn: 1234" maxlength="8" inputmode="numeric">
@@ -127,7 +109,7 @@
           <small class="hint">PIN kodunuz tarayıcıda güvenle hatırlanır.</small>
         </div>
 
-        <!-- Aksiyon Butonları (Kilidi Aç & Kilitle yan yana, Kapat altta kompakt) -->
+        <!-- Aksiyon Butonları (Kilidi Aç & Kilitle yan yana; Kapat & Mini PIN altta) -->
         <div class="action-buttons">
           <div class="action-buttons-pair">
             <button id="unlockBtn" class="btn btn-primary" onclick="sendUnlock()">
@@ -137,9 +119,14 @@
               🔒 Kilitle
             </button>
           </div>
-          <button id="powerBtn" class="btn btn-power btn-power-compact" onclick="confirmPoweroff()">
-            ⏻ Tahtayı Kapat (Gücü Kes)
-          </button>
+          <div class="action-buttons-utility">
+            <button id="powerBtn" class="btn btn-power btn-power-compact" onclick="confirmPoweroff()">
+              ⏻ Tahtayı Kapat
+            </button>
+            <button id="teacherPinToggleBtn" type="button" class="btn btn-pin-mini" onclick="toggleTeacherPinEditor()">
+              🔑 PIN
+            </button>
+          </div>
         </div>
       </div>
     </main>
@@ -332,6 +319,24 @@
         <div class="modal-actions" style="margin-top:12px;">
           <button id="btnRefreshScreenshot" class="btn btn-secondary" onclick="refreshCurrentScreenshot()">🔄 Tekrar Çek</button>
           <button class="btn btn-primary" onclick="closeScreenshotModal()">Kapat</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1B: Sınıf Seçici Alt Çekmece (Bottom Sheet) -->
+    <div id="boardPickerSheet" class="sheet-overlay hidden" onclick="onBoardSheetBackdropClick(event)">
+      <div class="sheet-panel">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <h3>🖥️ Sınıf Seçin <span id="onlineBoardCount" class="count-pill">0</span></h3>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" class="btn-refresh-sm" title="Yenile" onclick="fetchOnlineBoards()">🔄</button>
+            <button type="button" class="btn-sheet-close" title="Kapat" onclick="closeBoardPickerSheet()">✕</button>
+          </div>
+        </div>
+        <input type="search" id="boardSearchInput" class="board-search-input hidden" placeholder="🔍 Sınıf ara (Örn: 9-A, BT...)" oninput="filterTeacherBoards()">
+        <div id="teacherBoardGrid" class="sheet-board-list">
+          <div class="board-grid-empty">Çevrimiçi tahtalar yükleniyor...</div>
         </div>
       </div>
     </div>

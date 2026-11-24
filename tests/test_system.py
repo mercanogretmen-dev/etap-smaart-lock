@@ -46,9 +46,10 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertEqual(res_index.status_code, 200)
         self.assertIn("Tahta Kilit", res_index.text)
         self.assertIn("html5-qrcode", res_index.text)
+        self.assertIn("selectedBoardTrigger", res_index.text)
+        self.assertIn("boardPickerSheet", res_index.text)
         self.assertIn("teacherBoardGrid", res_index.text)
-        self.assertIn("selectedBoardBadge", res_index.text)
-        self.assertIn("teacherPinCompactRow", res_index.text)
+        self.assertIn("teacherPinToggleBtn", res_index.text)
         self.assertNotIn("customBoardInput", res_index.text)
         self.assertNotIn("boardSelect", res_index.text)
 
@@ -58,6 +59,7 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         res_js = self.client.get("/app.js")
         self.assertEqual(res_js.status_code, 200)
         self.assertIn("fetchOnlineBoards", res_js.text)
+        self.assertIn("openBoardPickerSheet", res_js.text)
         self.assertIn("selectTeacherBoard", res_js.text)
 
         # PWA Manifest & Service Worker & İkon testleri

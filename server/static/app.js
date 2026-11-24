@@ -186,6 +186,24 @@ async function cleanupOfflineBoards() {
   }
 }
 
+function openBoardPickerSheet() {
+  const sheet = document.getElementById("boardPickerSheet");
+  if (!sheet) return;
+  sheet.classList.remove("hidden");
+  fetchOnlineBoards();
+}
+
+function closeBoardPickerSheet() {
+  const sheet = document.getElementById("boardPickerSheet");
+  if (sheet) sheet.classList.add("hidden");
+}
+
+function onBoardSheetBackdropClick(event) {
+  if (event.target && event.target.id === "boardPickerSheet") {
+    closeBoardPickerSheet();
+  }
+}
+
 function selectTeacherBoard(boardId, boardName, boardStatus = "") {
   const cleanId = (boardId || "").trim();
   if (!cleanId) return;
@@ -202,8 +220,8 @@ function selectTeacherBoard(boardId, boardName, boardStatus = "") {
 
   updateSelectedBoardBadge();
 
-  document.querySelectorAll("#teacherBoardGrid .board-chip").forEach(chip => {
-    chip.classList.toggle("selected", chip.dataset.boardId === cleanId);
+  document.querySelectorAll("#teacherBoardGrid .sheet-board-item").forEach(item => {
+    item.classList.toggle("selected", item.dataset.boardId === cleanId);
   });
 }
 
@@ -217,24 +235,25 @@ function getSelectedBoardDisplayName() {
 }
 
 function updateSelectedBoardBadge() {
-  const badge = document.getElementById("selectedBoardBadge");
+  const trigger = document.getElementById("selectedBoardTrigger");
   const titleEl = document.getElementById("selectedBoardTitle");
   const statusEl = document.getElementById("selectedBoardStatus");
   const metaEl = document.getElementById("selectedBoardMeta");
-  if (!badge || !titleEl || !statusEl || !metaEl) return;
+  const actionEl = document.getElementById("selectedBoardAction");
+  if (!trigger || !titleEl || !statusEl || !metaEl || !actionEl) return;
 
   if (!selectedBoard.id) {
-    badge.classList.add("empty");
-    titleEl.textContent = "👆 Yukarıdan bir sınıf seçin veya QR okutun";
+    trigger.classList.add("empty");
+    titleEl.textContent = "🖥️ Sınıf Seçin";
     statusEl.className = "selected-status-pill hidden";
     statusEl.textContent = "";
-    metaEl.classList.add("hidden");
-    metaEl.textContent = "";
+    metaEl.textContent = "Dokunarak çevrimiçi tahtalardan seçin";
+    actionEl.textContent = "Seç";
     return;
   }
 
-  badge.classList.remove("empty");
-  titleEl.textContent = `🖥️ Seçili: ${getSelectedBoardDisplayName()}`;
+  trigger.classList.remove("empty");
+  titleEl.textContent = `🖥️ ${getSelectedBoardDisplayName()}`;
 
   const statusMap = {
     unlocked: { text: "🟢 Açık", cls: "unlocked" },
@@ -252,7 +271,7 @@ function updateSelectedBoardBadge() {
   }
 
   metaEl.textContent = `Kimlik: ${selectedBoard.id}`;
-  metaEl.classList.remove("hidden");
+  actionEl.textContent = "Değiştir";
 }
 
 function renderTeacherBoardGrid(boards) {
@@ -321,30 +340,58 @@ function renderTeacherBoardGrid(boards) {
   }
 
   grid.innerHTML = "";
+  const statusPillMap = {
+    unlocked: { text: "🟢 Açık", cls: "unlocked" },
+    locked: { text: "🔒 Kilitli", cls: "locked" },
+    updating: { text: "🔄 Güncelleniyor", cls: "updating" }
+  };
+
   filtered.forEach(b => {
     const displayName = b.name || b.id;
     const status = b.status || "locked";
     const statusEmoji = status === "unlocked" ? "🟢" : (status === "updating" ? "🔄" : "🔒");
+    const pillInfo = statusPillMap[status] || statusPillMap.locked;
+    const isSelected = selectedBoard.id === b.id;
 
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.dataset.boardId = b.id;
-    chip.className = `board-chip status-${status}${selectedBoard.id === b.id ? " selected" : ""}`;
+    const item = document.createElement("button");
+    item.type = "button";
+    item.dataset.boardId = b.id;
+    item.className = `sheet-board-item status-${status}${isSelected ? " selected" : ""}`;
+
+    const leftDiv = document.createElement("div");
+    leftDiv.className = "sheet-board-item-left";
 
     const iconSpan = document.createElement("span");
     iconSpan.className = "board-chip-icon";
     iconSpan.textContent = statusEmoji;
 
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "board-chip-name";
-    nameSpan.textContent = displayName;
+    const textDiv = document.createElement("div");
+    textDiv.className = "sheet-board-item-text";
 
-    chip.appendChild(iconSpan);
-    chip.appendChild(nameSpan);
-    chip.addEventListener("click", () => {
+    const mainSpan = document.createElement("span");
+    mainSpan.className = "sheet-board-item-main";
+    mainSpan.textContent = displayName;
+
+    const subSpan = document.createElement("span");
+    subSpan.className = "sheet-board-item-sub";
+    subSpan.textContent = `Kimlik: ${b.id}`;
+
+    textDiv.appendChild(mainSpan);
+    textDiv.appendChild(subSpan);
+    leftDiv.appendChild(iconSpan);
+    leftDiv.appendChild(textDiv);
+
+    const statusPill = document.createElement("span");
+    statusPill.className = `selected-status-pill ${pillInfo.cls}`;
+    statusPill.textContent = isSelected ? `✓ ${pillInfo.text}` : pillInfo.text;
+
+    item.appendChild(leftDiv);
+    item.appendChild(statusPill);
+    item.addEventListener("click", () => {
       selectTeacherBoard(b.id, displayName, status);
+      closeBoardPickerSheet();
     });
-    grid.appendChild(chip);
+    grid.appendChild(item);
   });
 }
 
@@ -353,24 +400,32 @@ function filterTeacherBoards() {
 }
 
 function updateTeacherPinUI(showEditor) {
-  const compactRow = document.getElementById("teacherPinCompactRow");
   const editor = document.getElementById("teacherPinEditor");
+  const toggleBtn = document.getElementById("teacherPinToggleBtn");
   const pinInput = document.getElementById("teacherPin");
-  if (!compactRow || !editor || !pinInput) return;
+  if (!editor || !pinInput) return;
 
   const hasPin = pinInput.value.trim().length > 0;
+  if (toggleBtn) {
+    toggleBtn.textContent = hasPin ? "🔑 PIN ✓" : "🔑 PIN";
+    toggleBtn.classList.toggle("pin-saved", hasPin);
+  }
+
   if (showEditor || !hasPin) {
-    compactRow.classList.add("hidden");
     editor.classList.remove("hidden");
   } else {
     editor.classList.add("hidden");
-    compactRow.classList.remove("hidden");
   }
 }
 
-function toggleTeacherPinEditor(showEditor) {
-  updateTeacherPinUI(showEditor);
-  if (showEditor) {
+function toggleTeacherPinEditor(forceState) {
+  const editor = document.getElementById("teacherPinEditor");
+  const nextState = typeof forceState === "boolean"
+    ? forceState
+    : (editor ? editor.classList.contains("hidden") : true);
+
+  updateTeacherPinUI(nextState);
+  if (nextState) {
     const pinInput = document.getElementById("teacherPin");
     if (pinInput) {
       pinInput.focus();
