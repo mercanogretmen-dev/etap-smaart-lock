@@ -15,6 +15,9 @@ import configparser
 import asyncio
 import hashlib
 import uuid
+import subprocess
+import webbrowser
+from urllib.parse import urlparse
 from datetime import datetime
 import qrcode
 from PIL import Image, ImageDraw
@@ -460,12 +463,40 @@ def play_alert_sound():
 
 
 # -------------------------------------------------------------
+# 🌐 Web Tarayıcısı Yardımcısı
+# -------------------------------------------------------------
+def open_browser_url(url: str):
+    """Verilen URL'yi sistemin varsayılan web tarayıcısında (Pardus / Linux / Windows) açar."""
+    if not url:
+        return
+    url = url.strip()
+    parsed = urlparse(url)
+    if "://" in url or parsed.scheme:
+        if parsed.scheme.lower() not in ("http", "https"):
+            return
+    else:
+        url = "https://" + url
+    try:
+        if sys.platform != "win32":
+            subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            webbrowser.open(url)
+    except Exception:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+
+# -------------------------------------------------------------
 # 📢 Kilit Ekranı İçine Gömülü Duyuru Katmanı (In-Window Overlay)
 # -------------------------------------------------------------
 class AnnouncementOverlayWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.duration_left = 45
+        self.link_url = ""
+        self.link_label = ""
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.init_ui()
@@ -478,7 +509,7 @@ class AnnouncementOverlayWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
 
         self.frame = QFrame()
-        self.frame.setFixedSize(700, 390)
+        self.frame.setFixedSize(700, 420)
         self.frame.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0b1930, stop:1 #112240);
@@ -494,7 +525,7 @@ class AnnouncementOverlayWidget(QWidget):
 
         frame_layout = QVBoxLayout(self.frame)
         frame_layout.setContentsMargins(35, 26, 35, 25)
-        frame_layout.setSpacing(16)
+        frame_layout.setSpacing(14)
 
         header = QHBoxLayout()
         icon = QLabel("📢")
@@ -531,12 +562,29 @@ class AnnouncementOverlayWidget(QWidget):
             background: rgba(7, 16, 32, 0.8);
             border: 1px solid rgba(56, 189, 248, 0.2);
             border-radius: 16px;
-            padding: 20px;
+            padding: 18px;
             line-height: 1.45;
         """)
         self.msg_label.setWordWrap(True)
         self.msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         frame_layout.addWidget(self.msg_label, 1)
+
+        # Varsa Bağlantı Butonu
+        self.btn_link = QPushButton("🌐 Bağlantıyı Aç")
+        self.btn_link.setFixedHeight(44)
+        self.btn_link.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        self.btn_link.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #2563eb);
+                color: #ffffff;
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.25);
+            }
+            QPushButton:hover { background: #0284c7; }
+        """)
+        self.btn_link.clicked.connect(self.on_link_clicked)
+        self.btn_link.hide()
+        frame_layout.addWidget(self.btn_link)
 
         bottom = QHBoxLayout()
         self.lbl_countdown = QLabel("⏱️ 45 saniye sonra kendiliğinden kapanır")
@@ -564,9 +612,27 @@ class AnnouncementOverlayWidget(QWidget):
 
         layout.addWidget(self.frame)
 
-    def show_announcement(self, message: str, duration_sec: int = 45):
+    def show_announcement(self, message: str, duration_sec: int = 45, link_url: str = "", link_label: str = ""):
         self.msg_label.setText(message)
         self.duration_left = duration_sec
+        self.link_url = (link_url or "").strip()
+        self.link_label = (link_label or "").strip()
+
+        if self.link_url:
+            self.btn_link.setText(f"🌐 {self.link_label}" if self.link_label else "🌐 Bağlantıyı Aç (Kilit Açılınca Açar)")
+            self.btn_link.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #2563eb);
+                    color: #ffffff;
+                    border-radius: 12px;
+                    border: 1px solid rgba(255, 255, 255, 0.25);
+                }
+                QPushButton:hover { background: #0284c7; }
+            """)
+            self.btn_link.show()
+        else:
+            self.btn_link.hide()
+
         self.lbl_countdown.setText(f"⏱️ {self.duration_left} saniye sonra kendiliğinden kapanır")
         if self.parent():
             self.setGeometry(0, 0, self.parent().width(), self.parent().height())
@@ -574,6 +640,24 @@ class AnnouncementOverlayWidget(QWidget):
         self.raise_()
         self.timer.stop()
         self.timer.start(1000)
+
+    def on_link_clicked(self):
+        if not self.link_url:
+            return
+        parent_window = self.window()
+        if hasattr(parent_window, "is_locked") and parent_window.is_locked:
+            parent_window.pending_open_url = self.link_url
+            self.btn_link.setText("✅ Bağlantı Kaydedildi (Kilit Açılınca Açılacak)")
+            self.btn_link.setStyleSheet("""
+                QPushButton {
+                    background: #059669;
+                    color: white;
+                    border-radius: 12px;
+                    border: 1px solid rgba(255, 255, 255, 0.4);
+                }
+            """)
+        else:
+            open_browser_url(self.link_url)
 
     def close_announcement(self):
         self.timer.stop()
@@ -591,7 +675,7 @@ class AnnouncementOverlayWidget(QWidget):
 # 📢 Masaüstü Açıkken Ortada Açılan Modern İdare Duyuru Kutusu (Popup)
 # -------------------------------------------------------------
 class AnnouncementModalDialog(QDialog):
-    def __init__(self, message: str, duration_sec: int = 45, parent=None):
+    def __init__(self, message: str, duration_sec: int = 45, link_url: str = "", link_label: str = "", parent=None):
         super().__init__(parent)
         self.setWindowTitle("İdare Duyurusu — Tahta Kilit")
         self.setWindowFlags(
@@ -599,10 +683,11 @@ class AnnouncementModalDialog(QDialog):
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.Tool
         )
-        self.setFixedSize(680, 380)
-        self.setStyleSheet("background-color: #0b1930; border-radius: 24px;")
-
         self.duration_left = duration_sec
+        self.link_url = (link_url or "").strip()
+        self.link_label = (link_label or "").strip()
+        self.setFixedSize(680, 420 if self.link_url else 380)
+        self.setStyleSheet("background-color: #0b1930; border-radius: 24px;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -617,7 +702,7 @@ class AnnouncementModalDialog(QDialog):
         """)
         frame_layout = QVBoxLayout(self.frame)
         frame_layout.setContentsMargins(35, 26, 35, 25)
-        frame_layout.setSpacing(16)
+        frame_layout.setSpacing(14)
 
         header = QHBoxLayout()
         icon = QLabel("📢")
@@ -654,12 +739,31 @@ class AnnouncementModalDialog(QDialog):
             background: rgba(7, 16, 32, 0.78);
             border: 1px solid rgba(56, 189, 248, 0.2);
             border-radius: 16px;
-            padding: 20px;
+            padding: 18px;
             line-height: 1.45;
         """)
         msg_label.setWordWrap(True)
         msg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         frame_layout.addWidget(msg_label, 1)
+
+        # Varsa Bağlantı Butonu
+        if self.link_url:
+            btn_text = f"🌐 {self.link_label}" if self.link_label else "🌐 Bağlantıyı Tarayıcıda Aç"
+            btn_link = QPushButton(btn_text)
+            btn_link.setFixedHeight(44)
+            btn_link.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+            btn_link.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #2563eb);
+                    color: white;
+                    border: 1px solid rgba(255, 255, 255, 0.3);
+                    border-radius: 12px;
+                }
+                QPushButton:hover { background: #0284c7; }
+                QPushButton:pressed { background: #1d4ed8; }
+            """)
+            btn_link.clicked.connect(self.on_link_clicked)
+            frame_layout.addWidget(btn_link)
 
         bottom = QHBoxLayout()
         self.lbl_countdown = QLabel(f"⏱️ {self.duration_left} saniye sonra kendiliğinden kapanır")
@@ -691,6 +795,9 @@ class AnnouncementModalDialog(QDialog):
         self.timer.timeout.connect(self.tick)
         self.timer.start(1000)
 
+    def on_link_clicked(self):
+        open_browser_url(self.link_url)
+
     def show_centered_on_screen(self):
         screen = QApplication.primaryScreen()
         if screen:
@@ -713,6 +820,147 @@ class AnnouncementModalDialog(QDialog):
             self.close_dialog()
         else:
             self.lbl_countdown.setText(f"⏱️ {self.duration_left} saniye sonra kendiliğinden kapanır")
+
+
+# -------------------------------------------------------------
+# 📢 Masaüstü Sabit Kilit Üstü Duyuru Kartı (Persistent Bottom-Right Widget)
+# -------------------------------------------------------------
+class DesktopAnnouncementWidget(QWidget):
+    """Masaüstü açıkken sağ alt köşede 'Tahtayı Kilitle' butonunun hemen üstünde duran sabit duyuru kartı"""
+    def __init__(self, message: str, duration_sec: int = 120, link_url: str = "", link_label: str = "", parent=None):
+        super().__init__(parent)
+        self.duration_left = duration_sec
+        self.link_url = (link_url or "").strip()
+        self.link_label = (link_label or "").strip()
+        self.raw_message = message
+
+        self.setWindowFlags(
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedWidth(360)
+        self.setMinimumHeight(140 if self.link_url else 110)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+
+        self.frame = QFrame()
+        self.frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0b1930, stop:1 #112240);
+                border: 2px solid #38bdf8;
+                border-radius: 16px;
+            }
+        """)
+        shadow = QGraphicsDropShadowEffect(self.frame)
+        shadow.setBlurRadius(24)
+        shadow.setColor(QColor(56, 189, 248, 150))
+        shadow.setOffset(0, 3)
+        self.frame.setGraphicsEffect(shadow)
+
+        fl = QVBoxLayout(self.frame)
+        fl.setContentsMargins(14, 10, 14, 10)
+        fl.setSpacing(6)
+
+        # Üst Başlık Satırı
+        header = QHBoxLayout()
+        header.setSpacing(6)
+        icon = QLabel("📢")
+        icon.setFont(QFont("Segoe UI Emoji", 13))
+        header.addWidget(icon)
+
+        title = QLabel("İDARE DUYURUSU")
+        title.setFont(QFont("Segoe UI", 11, QFont.Weight.ExtraBold))
+        title.setStyleSheet("color: #38bdf8; letter-spacing: 0.8px; border: none; background: transparent;")
+        header.addWidget(title)
+
+        header.addStretch()
+
+        self.lbl_timer = QLabel(f"{self.duration_left}s")
+        self.lbl_timer.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        self.lbl_timer.setStyleSheet("color: #94a3b8; border: none; background: transparent;")
+        header.addWidget(self.lbl_timer)
+
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(22, 22)
+        btn_close.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.1);
+                color: #94a3b8;
+                border: none;
+                border-radius: 11px;
+            }
+            QPushButton:hover { background: #ef4444; color: white; }
+        """)
+        btn_close.clicked.connect(self.close_card)
+        header.addWidget(btn_close)
+        fl.addLayout(header)
+
+        # Duyuru Metni
+        self.lbl_msg = QLabel(message)
+        self.lbl_msg.setFont(QFont("Segoe UI", 11, QFont.Weight.Medium))
+        self.lbl_msg.setStyleSheet("color: #f8fafc; border: none; background: transparent;")
+        self.lbl_msg.setWordWrap(True)
+        self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        fl.addWidget(self.lbl_msg, 1)
+
+        # Varsa Bağlantı Butonu
+        if self.link_url:
+            btn_text = f"🌐 {self.link_label}" if self.link_label else "🌐 Bağlantıyı Aç"
+            self.btn_open = QPushButton(btn_text)
+            self.btn_open.setFixedHeight(34)
+            self.btn_open.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            self.btn_open.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #2563eb);
+                    color: white;
+                    border: 1px solid rgba(255,255,255,0.25);
+                    border-radius: 9px;
+                }
+                QPushButton:hover { background: #0284c7; }
+                QPushButton:pressed { background: #1d4ed8; }
+            """)
+            self.btn_open.clicked.connect(self.on_link_clicked)
+            fl.addWidget(self.btn_open)
+
+        layout.addWidget(self.frame)
+        self.adjustSize()
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(1000)
+
+    def on_link_clicked(self):
+        open_browser_url(self.link_url)
+
+    def position_above_relock(self, relock_widget=None):
+        self.adjustSize()
+        screen = QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            # Ekranın sağ alt köşesi, relock butonunun hemen üstü
+            x = avail.x() + avail.width() - self.width() - 12
+            if relock_widget is not None and relock_widget.isVisible():
+                y = relock_widget.frameGeometry().top() - self.height() - 10
+            else:
+                y = avail.y() + avail.height() - self.height() - 110
+            y = max(avail.y() + 10, y)
+            self.move(x, y)
+
+    def close_card(self):
+        self.timer.stop()
+        self.hide()
+        self.close()
+
+    def tick(self):
+        self.duration_left -= 1
+        if self.duration_left <= 0:
+            self.close_card()
+        else:
+            self.lbl_timer.setText(f"{self.duration_left}s")
 
 
 # -------------------------------------------------------------
@@ -755,9 +1003,28 @@ class BlueBannerTicker(QFrame):
         self.text_label.setStyleSheet("color: #ffffff; background: transparent; border: none;")
         layout.addWidget(self.text_label, 1)
 
+        self.btn_link = QPushButton("🌐 Bağlantıyı Aç")
+        self.btn_link.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.btn_link.setFixedHeight(34)
+        self.btn_link.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #2563eb);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 0.35);
+                border-radius: 9px;
+                padding: 4px 16px;
+            }
+            QPushButton:hover { background: #0284c7; }
+        """)
+        self.btn_link.clicked.connect(self._on_link_clicked)
+        self.btn_link.hide()
+        layout.addWidget(self.btn_link)
+
         self.raw_message = ""
         self.scroll_buffer = ""
         self.scroll_pos = 0
+        self.link_url = ""
+        self.link_label = ""
 
         self.timer_scroll = QTimer(self)
         self.timer_scroll.timeout.connect(self._scroll_step)
@@ -767,8 +1034,27 @@ class BlueBannerTicker(QFrame):
 
         self.hide()
 
-    def show_message(self, message: str, duration_sec: int = 60):
+    def show_message(self, message: str, duration_sec: int = 60, link_url: str = "", link_label: str = ""):
         self.raw_message = message.strip()
+        self.link_url = (link_url or "").strip()
+        self.link_label = (link_label or "").strip()
+
+        if self.link_url:
+            self.btn_link.setText(f"🌐 {self.link_label}" if self.link_label else "🌐 Bağlantıyı Aç")
+            self.btn_link.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #2563eb);
+                    color: white;
+                    border: 1px solid rgba(255, 255, 255, 0.35);
+                    border-radius: 9px;
+                    padding: 4px 16px;
+                }
+                QPushButton:hover { background: #0284c7; }
+            """)
+            self.btn_link.show()
+        else:
+            self.btn_link.hide()
+
         unit = f"   ★ {self.raw_message}   •   "
         self.scroll_buffer = unit * 4
         self.scroll_pos = 0
@@ -777,6 +1063,25 @@ class BlueBannerTicker(QFrame):
         self.timer_scroll.start(110)
         self.timer_close.stop()
         self.timer_close.start(duration_sec * 1000)
+
+    def _on_link_clicked(self):
+        if not self.link_url:
+            return
+        parent_window = self.window()
+        if hasattr(parent_window, "is_locked") and parent_window.is_locked:
+            parent_window.pending_open_url = self.link_url
+            self.btn_link.setText("✅ Bağlantı Kaydedildi (Kilit Açılınca Açılacak)")
+            self.btn_link.setStyleSheet("""
+                QPushButton {
+                    background: #059669;
+                    color: white;
+                    border: 1px solid rgba(255, 255, 255, 0.4);
+                    border-radius: 9px;
+                    padding: 4px 16px;
+                }
+            """)
+        else:
+            open_browser_url(self.link_url)
 
     def _scroll_step(self):
         if not self.scroll_buffer:
@@ -2571,7 +2876,10 @@ class LockScreenWindow(QMainWindow):
         self.admin_exit_overlay = None
         self.update_overlay = None
         self.desktop_announcement_dlg = None
+        self.desktop_announcement_card = None
         self.desktop_update_banner = None
+        self.pending_open_url = None
+        self.current_announcement = None
         self.is_updating = False
         self.remote_update_thread = None
 
@@ -3243,6 +3551,26 @@ class LockScreenWindow(QMainWindow):
 
         self.show_floating_relock_button()
 
+        # Eğer kilit ekranındayken bağlantıya tıklanmışsa, kilit açılınca otomatik tarayıcıda aç
+        if hasattr(self, "pending_open_url") and self.pending_open_url:
+            url_to_open = self.pending_open_url
+            self.pending_open_url = None
+            QTimer.singleShot(600, lambda: open_browser_url(url_to_open))
+
+        # Eğer aktif bir duyuru varsa, masaüstünde sağ altta kilit butonunun üstünde sabit kartı göster
+        if hasattr(self, "current_announcement") and self.current_announcement:
+            ann = self.current_announcement
+            ann_age = time.time() - ann.get("timestamp", 0)
+            ann_dur = ann.get("duration_sec", 120)
+            if ann_age < ann_dur:
+                rem_dur = max(10, int(ann_dur - ann_age))
+                self.show_desktop_announcement_card(
+                    ann.get("message", ""),
+                    rem_dur,
+                    link_url=ann.get("link_url", ""),
+                    link_label=ann.get("link_label", "")
+                )
+
     def lock_board(self):
         self.is_locked = True
         if hasattr(self, "relock_btn") and self.relock_btn:
@@ -3250,6 +3578,11 @@ class LockScreenWindow(QMainWindow):
         if hasattr(self, "desktop_announcement_dlg") and self.desktop_announcement_dlg:
             try:
                 self.desktop_announcement_dlg.close_dialog()
+            except Exception:
+                pass
+        if hasattr(self, "desktop_announcement_card") and self.desktop_announcement_card:
+            try:
+                self.desktop_announcement_card.close_card()
             except Exception:
                 pass
         self.show_kiosk_fullscreen()
@@ -3329,8 +3662,12 @@ class LockScreenWindow(QMainWindow):
             self.start_remote_update(by=data.get("by", "Yönetici"), only_if_newer=False)
         elif action == "banner_message":
             msg = data.get("message", "")
-            duration = data.get("duration_sec", 45)
-            self.show_announcement(msg, duration)
+            duration = data.get("duration_sec", 120)
+            link_url = data.get("link_url", "")
+            link_label = data.get("link_label", "")
+            self.show_announcement(msg, duration, link_url=link_url, link_label=link_label)
+        elif action == "clear_announcement":
+            self.clear_announcements()
 
     # -------------------------------------------------------------
     # 🔄 Merkezi Uzaktan & Otomatik Güncelleme Kontrolü
@@ -3474,21 +3811,66 @@ class LockScreenWindow(QMainWindow):
         if hasattr(self, "settings_overlay") and self.settings_overlay:
             self.settings_overlay.input_school.setText(self.okul_adi)
 
-    def show_announcement(self, message: str, duration_sec: int = 45):
+    def show_announcement(self, message: str, duration_sec: int = 120, link_url: str = "", link_label: str = ""):
         play_alert_sound()
-        self.banner.show_message(message, duration_sec)
+        self.current_announcement = {
+            "message": message,
+            "duration_sec": duration_sec,
+            "link_url": link_url,
+            "link_label": link_label,
+            "timestamp": time.time()
+        }
+        self.banner.show_message(message, duration_sec, link_url=link_url, link_label=link_label)
 
         if self.is_locked:
             if hasattr(self, "announcement_overlay") and self.announcement_overlay:
-                self.announcement_overlay.show_announcement(message, duration_sec)
+                self.announcement_overlay.show_announcement(message, duration_sec, link_url=link_url, link_label=link_label)
         else:
+            # 1. Ortada dikkat çekici popup aç
             if hasattr(self, "desktop_announcement_dlg") and self.desktop_announcement_dlg:
                 try:
                     self.desktop_announcement_dlg.close_dialog()
                 except Exception:
                     pass
-            self.desktop_announcement_dlg = AnnouncementModalDialog(message, duration_sec, None)
+            self.desktop_announcement_dlg = AnnouncementModalDialog(
+                message, duration_sec, link_url=link_url, link_label=link_label, parent=None
+            )
             self.desktop_announcement_dlg.show_centered_on_screen()
+
+            # 2. Sağ alttaki 'Tahtayı Kilitle' butonunun hemen üstünde sabit kart göster
+            self.show_desktop_announcement_card(message, duration_sec, link_url=link_url, link_label=link_label)
+
+    def show_desktop_announcement_card(self, message: str, duration_sec: int = 120, link_url: str = "", link_label: str = ""):
+        """Masaüstü açıkken sağ alt köşede kilit butonunun hemen üstünde duran sabit duyuru kartı"""
+        if hasattr(self, "desktop_announcement_card") and self.desktop_announcement_card:
+            try:
+                self.desktop_announcement_card.close_card()
+            except Exception:
+                pass
+        self.desktop_announcement_card = DesktopAnnouncementWidget(
+            message, duration_sec, link_url=link_url, link_label=link_label, parent=None
+        )
+        self.desktop_announcement_card.position_above_relock(getattr(self, "relock_btn", None))
+        self.desktop_announcement_card.show()
+
+    def clear_announcements(self):
+        """Tüm açık duyuru bileşenlerini temizler."""
+        self.current_announcement = None
+        self.pending_open_url = None
+        if hasattr(self, "banner"):
+            self.banner.stop_banner()
+        if hasattr(self, "announcement_overlay") and self.announcement_overlay:
+            self.announcement_overlay.close_announcement()
+        if hasattr(self, "desktop_announcement_dlg") and self.desktop_announcement_dlg:
+            try:
+                self.desktop_announcement_dlg.close_dialog()
+            except Exception:
+                pass
+        if hasattr(self, "desktop_announcement_card") and self.desktop_announcement_card:
+            try:
+                self.desktop_announcement_card.close_card()
+            except Exception:
+                pass
 
     def handle_poweroff(self):
         """Tahtanın gücünü kapatır (shutdown)."""

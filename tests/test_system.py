@@ -35,6 +35,7 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         manager.board_names.clear()
         manager.board_versions.clear()
         manager.board_update_msg.clear()
+        manager.active_announcement = None
 
     # -------------------------------------------------------------------------
     # 1. Statik Dosyalar (PWA Web Arayüzü) Testi
@@ -101,6 +102,16 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         })
         self.assertEqual(res.status_code, 400)
         self.assertIn("boş olamaz", res.json()["detail"])
+
+        # Tehlikeli URL şeması engelleme (javascript:, file:, data:)
+        res = self.client.post("/api/broadcast", json={
+            "admin_pin": config.ADMIN_PIN,
+            "target": "all",
+            "message": "Güvenlik testi",
+            "link_url": "javascript:alert(1)"
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Geçersiz bağlantı adresi", res.json()["detail"])
 
     # -------------------------------------------------------------------------
     # 3. Canlı WebSocket ve Tahta Kilit / Anons Akışı Testi
@@ -172,17 +183,30 @@ class TestEtapSmartLockSystem(unittest.TestCase):
             self.assertEqual(banner_cmd.get("message"), "Öğretmenler odasında toplantı vardır.")
             self.assertEqual(banner_cmd.get("duration_sec"), 45)
 
-            # 6. Müdür bey tüm okula ('all') anons geçer
+            # 6. Müdür bey tüm okula ('all') anons geçer (Bağlantı linki ile)
             res_bc_all = self.client.post("/api/broadcast", json={
                 "admin_pin": config.ADMIN_PIN,
                 "target": "all",
                 "message": "İyi dersler dileriz.",
-                "duration_sec": 30
+                "duration_sec": 30,
+                "link_url": "https://eba.gov.tr",
+                "link_label": "EBA'ya Git"
             })
             self.assertEqual(res_bc_all.status_code, 200)
             banner_all_cmd = websocket.receive_json()
             self.assertEqual(banner_all_cmd.get("action"), "banner_message")
             self.assertEqual(banner_all_cmd.get("message"), "İyi dersler dileriz.")
+            self.assertEqual(banner_all_cmd.get("link_url"), "https://eba.gov.tr")
+            self.assertEqual(banner_all_cmd.get("link_label"), "EBA'ya Git")
+
+            # 6.1 Aktif duyuruları temizleme testi
+            res_clear = self.client.post("/api/broadcast/clear", json={
+                "admin_pin": config.ADMIN_PIN,
+                "target": "all"
+            })
+            self.assertEqual(res_clear.status_code, 200)
+            clear_cmd = websocket.receive_json()
+            self.assertEqual(clear_cmd.get("action"), "clear_announcement")
 
             # 7. Tahtadan ping gönderilir -> pong yanıtı dönmeli
             websocket.send_json({"action": "ping"})

@@ -207,8 +207,8 @@
 
         <!-- KART 2: MÜDÜR DUYURU & ANONS PANELİ -->
         <div class="card admin-card mb-3" style="margin-bottom: 14px;">
-          <h3>📢 Mavi Işıklı Kayan Duyuru</h3>
-          <p class="hint">Tahtaların en üstünde kayan LED bant duyurusu yayınlar.</p>
+          <h3>📢 Mavi Işıklı Kayan Duyuru & Bağlantı</h3>
+          <p class="hint">Tahtaların kilit ekranında ve masaüstünde duyuru ile tıklanabilir web bağlantısı yayınlar.</p>
 
           <div class="input-group">
             <label for="adminTarget">Yayınlanacak Hedef:</label>
@@ -223,13 +223,29 @@
           </div>
 
           <div class="input-group">
-            <label for="adminDuration">Ekranda Kalma Süresi (Saniye):</label>
-            <input type="number" id="adminDuration" value="60" min="10" max="3600">
+            <label for="adminLinkUrl">🔗 Bağlantı Linki (URL — İsteğe Bağlı):</label>
+            <input type="url" id="adminLinkUrl" placeholder="Örn: https://eba.gov.tr veya doküman linki">
+            <small class="hint">Öğretmen tahtadan tek dokunuşla bu web sitesini tarayıcıda açabilir.</small>
           </div>
 
-          <button class="btn btn-blue" onclick="sendBroadcast()">
-            📢 Mavi Işıklı Duyuruyu Yayınla
-          </button>
+          <div class="input-group">
+            <label for="adminLinkLabel">🏷️ Buton Başlığı (İsteğe Bağlı):</label>
+            <input type="text" id="adminLinkLabel" placeholder="Örn: Bağlantıyı Aç / Ankete Katıl">
+          </div>
+
+          <div class="input-group">
+            <label for="adminDuration">Ekranda Kalma Süresi (Saniye):</label>
+            <input type="number" id="adminDuration" value="120" min="10" max="86400">
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <button class="btn btn-blue" onclick="sendBroadcast()">
+              📢 Mavi Işıklı Duyuruyu Yayınla
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="clearBroadcast()" style="background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.4); color: #fca5a5;">
+              🗑️ Tahtalardaki Aktif Duyuruyu Temizle
+            </button>
+          </div>
         </div>
 
         <!-- KART 3: OKUL / KURUM ADI BELİRLEME -->

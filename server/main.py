@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import uuid
+from urllib.parse import urlparse
 from typing import Dict, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status
 from fastapi.responses import FileResponse
@@ -60,6 +61,8 @@ class BoardConnectionManager:
         self.school_name: str = self.load_school_name()
         # Bekleyen ekran görüntüsü yanıtları (request_id -> asyncio.Future)
         self.pending_screenshots: Dict[str, asyncio.Future] = {}
+        # Sunucuda tutulan aktif duyuru (yeni bağlanan tahtalara da iletilir)
+        self.active_announcement: Optional[dict] = None
 
     def load_school_name(self) -> str:
         if os.path.exists(SETTINGS_FILE):
@@ -204,7 +207,13 @@ class BroadcastRequest(BaseModel):
     admin_pin: str
     target: str  # "all" veya belirli bir "board_id" (örn: "9-A")
     message: str
-    duration_sec: int = 60  # Ekranda kaç saniye aksın
+    duration_sec: int = 120  # Ekranda kaç saniye aksın
+    link_url: Optional[str] = None
+    link_label: Optional[str] = None
+
+class BroadcastClearRequest(BaseModel):
+    admin_pin: str
+    target: str = "all"
 
 class SchoolSettingsRequest(BaseModel):
     admin_pin: str
@@ -239,6 +248,15 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Op
             "school_name": manager.school_name,
             "message": f"Bağlantı kuruldu: {manager.board_names.get(board_id, initial_name)}"
         }))
+
+        # Varsa süresi dolmamış aktif duyuruyu yeni bağlanan tahtaya da ilet
+        if manager.active_announcement:
+            ann_age = time.time() - manager.active_announcement.get("timestamp", 0)
+            ann_dur = manager.active_announcement.get("duration_sec", 120)
+            if ann_age < ann_dur:
+                replay_payload = dict(manager.active_announcement)
+                replay_payload["duration_sec"] = max(10, int(ann_dur - ann_age))
+                await websocket.send_text(json.dumps(replay_payload))
 
         while True:
             # Tahtadan gelen kalp atışı (heartbeat) ve durum bildirimleri
@@ -408,7 +426,7 @@ async def poweroff_board(req: PoweroffRequest):
 
 @app.post("/api/broadcast")
 async def broadcast_announcement(req: BroadcastRequest):
-    """Müdür / İdare tarafından mavi ışıklı kayan bant duyurusu gönderme"""
+    """Müdür / İdare tarafından mavi ışıklı kayan bant duyurusu ve web bağlantısı gönderme"""
     # 1. Müdür PIN'ini doğrula
     if req.admin_pin != config.ADMIN_PIN:
         raise HTTPException(
@@ -422,14 +440,31 @@ async def broadcast_announcement(req: BroadcastRequest):
             detail="Duyuru metni boş olamaz!"
         )
 
+    normalized_url = ""
+    raw_url = (req.link_url or "").strip()
+    if raw_url:
+        parsed = urlparse(raw_url)
+        if "://" in raw_url or parsed.scheme:
+            if parsed.scheme.lower() not in ("http", "https"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Geçersiz bağlantı adresi! Yalnızca http:// veya https:// desteklenir."
+                )
+            normalized_url = raw_url
+        else:
+            normalized_url = f"https://{raw_url}"
+
     payload = {
         "action": "banner_message",
         "message": req.message.strip(),
+        "link_url": normalized_url,
+        "link_label": (req.link_label or "").strip(),
         "duration_sec": req.duration_sec,
         "timestamp": time.time()
     }
 
     if req.target == "all":
+        manager.active_announcement = payload
         count = await manager.broadcast_all(payload)
         return {
             "success": True,
@@ -453,6 +488,47 @@ async def broadcast_announcement(req: BroadcastRequest):
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Duyuru tahtaya iletilemedi."
+            )
+
+@app.post("/api/broadcast/clear")
+async def clear_broadcast_announcement(req: BroadcastClearRequest):
+    """Müdür / İdare tarafından tahtalardaki aktif duyuruları temizleme"""
+    if req.admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    payload = {
+        "action": "clear_announcement",
+        "timestamp": time.time()
+    }
+    manager.active_announcement = None
+
+    if req.target == "all":
+        count = await manager.broadcast_all(payload)
+        return {
+            "success": True,
+            "message": f"Aktif duyurular açık olan {count} tahtadan temizlendi! 🧹"
+        }
+    else:
+        target_id = manager.find_board(req.target)
+        if not target_id or not manager.is_connected(target_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"'{req.target}' tahtası şu anda çevrimdışı."
+            )
+        sent = await manager.send_to_board(target_id, payload)
+        if sent:
+            board_name = manager.board_names.get(target_id, target_id)
+            return {
+                "success": True,
+                "message": f"Aktif duyuru '{board_name}' tahtasından temizlendi! 🧹"
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Temizleme komutu iletilemedi."
             )
 
 @app.get("/api/settings/school")

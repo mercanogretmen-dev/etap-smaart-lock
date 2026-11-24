@@ -429,13 +429,15 @@ async function sendPoweroff() {
 }
 
 // -------------------------------------------------------------
-// 📢 Müdür / İdare Duyuru Yayını
+// 📢 Müdür / İdare Duyuru Yayını & Bağlantı Gönderme
 // -------------------------------------------------------------
 async function sendBroadcast() {
   const adminPin = document.getElementById("adminPin").value.trim();
   const target = document.getElementById("adminTarget").value;
   const message = document.getElementById("adminMessage").value.trim();
-  const duration = parseInt(document.getElementById("adminDuration").value) || 60;
+  const linkUrl = (document.getElementById("adminLinkUrl")?.value || "").trim();
+  const linkLabel = (document.getElementById("adminLinkLabel")?.value || "").trim();
+  const duration = parseInt(document.getElementById("adminDuration").value) || 120;
 
   if (!adminPin) {
     showToast("Lütfen İdare PIN kodunu girin!", "error");
@@ -454,6 +456,8 @@ async function sendBroadcast() {
         admin_pin: adminPin,
         target: target,
         message: message,
+        link_url: linkUrl,
+        link_label: linkLabel,
         duration_sec: duration
       })
     });
@@ -462,8 +466,44 @@ async function sendBroadcast() {
     if (res.ok && data.success) {
       showToast(data.message, "success");
       document.getElementById("adminMessage").value = "";
+      if (document.getElementById("adminLinkUrl")) {
+        document.getElementById("adminLinkUrl").value = "";
+      }
+      if (document.getElementById("adminLinkLabel")) {
+        document.getElementById("adminLinkLabel").value = "";
+      }
     } else {
       showToast(data.detail || "Duyuru iletilemedi!", "error");
+    }
+  } catch (err) {
+    showToast("Sunucu hatası: " + err, "error");
+  }
+}
+
+async function clearBroadcast() {
+  const adminPin = document.getElementById("adminPin").value.trim();
+  const target = document.getElementById("adminTarget").value;
+
+  if (!adminPin) {
+    showToast("Lütfen İdare PIN kodunu girin!", "error");
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/broadcast/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        admin_pin: adminPin,
+        target: target
+      })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(data.message || "Aktif duyurular temizlendi!", "success");
+    } else {
+      showToast(data.detail || "Duyurular temizlenemedi!", "error");
     }
   } catch (err) {
     showToast("Sunucu hatası: " + err, "error");
