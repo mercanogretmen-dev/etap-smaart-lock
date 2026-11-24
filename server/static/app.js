@@ -18,8 +18,13 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("customBoardInput").value = savedBoard;
   }
   const savedAdminPin = localStorage.getItem("etap_admin_pin");
-  if (savedAdminPin && document.getElementById("adminPin")) {
-    document.getElementById("adminPin").value = savedAdminPin;
+  if (savedAdminPin) {
+    if (document.getElementById("adminPin")) {
+      document.getElementById("adminPin").value = savedAdminPin;
+    }
+    if (document.getElementById("fleetAdminPin")) {
+      document.getElementById("fleetAdminPin").value = savedAdminPin;
+    }
   }
 
   // Çevrimiçi tahtaları listele
@@ -35,6 +40,31 @@ document.addEventListener("DOMContentLoaded", () => {
   setupPwa();
 });
 
+function syncAdminPin(sourceId) {
+  const src = document.getElementById(sourceId);
+  if (!src) return;
+  const val = src.value;
+  const otherId = sourceId === "adminPin" ? "fleetAdminPin" : "adminPin";
+  const other = document.getElementById(otherId);
+  if (other && other.value !== val) {
+    other.value = val;
+  }
+  if (val.trim()) {
+    localStorage.setItem("etap_admin_pin", val.trim());
+  }
+}
+
+function getAdminPinValue(preferredInputId = "adminPin") {
+  const preferred = document.getElementById(preferredInputId);
+  const fallbackId = preferredInputId === "adminPin" ? "fleetAdminPin" : "adminPin";
+  const fallback = document.getElementById(fallbackId);
+  const val = (preferred && preferred.value.trim()) || (fallback && fallback.value.trim()) || "";
+  if (val) {
+    localStorage.setItem("etap_admin_pin", val);
+  }
+  return val;
+}
+
 // -------------------------------------------------------------
 // 📑 Sekme Değiştirme
 // -------------------------------------------------------------
@@ -48,10 +78,14 @@ function switchTab(tabName) {
   } else if (tabName === "offline") {
     document.querySelector(".tab-btn:nth-child(2)").classList.add("active");
     document.getElementById("offlineTab").classList.add("active");
-  } else if (tabName === "admin") {
+  } else if (tabName === "fleet") {
     document.querySelector(".tab-btn:nth-child(3)").classList.add("active");
-    document.getElementById("adminTab").classList.add("active");
+    document.getElementById("fleetTab").classList.add("active");
     fetchAdminFleet();
+  } else if (tabName === "admin") {
+    document.querySelector(".tab-btn:nth-child(4)").classList.add("active");
+    document.getElementById("adminTab").classList.add("active");
+    fetchOnlineBoards();
     fetchSchoolName();
   }
 
@@ -511,7 +545,10 @@ function renderAdminBoardFleet(boards) {
     card.className = "fleet-card";
     card.innerHTML = `
       <div class="fleet-info">
-        <span class="fleet-name">🖥️ ${escapeHtml(displayName)} ${versionBadge}</span>
+        <div class="fleet-top-row">
+          <span class="fleet-name">🖥️ ${escapeHtml(displayName)}</span>
+          ${versionBadge}
+        </div>
         <span class="fleet-status ${statusClass}">${statusText}</span>
       </div>
       <div class="fleet-actions">
@@ -528,10 +565,11 @@ function renderAdminBoardFleet(boards) {
 }
 
 async function openScreenshotModal(boardId, boardName) {
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue("fleetAdminPin");
   if (!adminPin) {
     showToast("Lütfen yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    document.getElementById("adminPin").focus();
+    const pinEl = document.getElementById("fleetAdminPin") || document.getElementById("adminPin");
+    if (pinEl) pinEl.focus();
     return;
   }
 
@@ -552,7 +590,7 @@ async function openScreenshotModal(boardId, boardName) {
 
 async function refreshCurrentScreenshot() {
   if (!currentScreenshotBoard) return;
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue("fleetAdminPin");
   const loading = document.getElementById("screenshotLoading");
   const wrapper = document.getElementById("screenshotImgWrapper");
 
@@ -667,10 +705,11 @@ function confirmBulkUpdate() {
 }
 
 async function triggerSingleBoardUpdate(boardId, boardName) {
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue("fleetAdminPin");
   if (!adminPin) {
     showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    document.getElementById("adminPin").focus();
+    const pinEl = document.getElementById("fleetAdminPin") || document.getElementById("adminPin");
+    if (pinEl) pinEl.focus();
     return;
   }
 

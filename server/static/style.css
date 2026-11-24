@@ -124,7 +124,7 @@ input, textarea {
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 700;
   border-radius: 10px;
   cursor: pointer;
@@ -132,7 +132,8 @@ input, textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .tab-btn.active {
@@ -622,24 +623,47 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
+.btn-refresh-fleet {
+  width: auto;
+  padding: 7px 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: 10px;
+  background: rgba(51, 65, 85, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s;
+}
+
+.btn-refresh-fleet:hover {
+  background: #334155;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
 .fleet-grid {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-top: 10px;
-  max-height: 380px;
+  max-height: 60vh;
   overflow-y: auto;
   padding-right: 4px;
 }
 
 .fleet-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid #334155;
-  border-radius: 12px;
-  padding: 10px 14px;
+  border-radius: 14px;
+  padding: 12px 14px;
   gap: 10px;
   transition: all 0.2s ease;
 }
@@ -652,21 +676,34 @@ input:focus, select:focus, textarea:focus {
 .fleet-info {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fleet-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
 }
 
 .fleet-name {
   font-weight: 700;
   color: #f8fafc;
-  font-size: 0.95rem;
+  font-size: 0.96rem;
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fleet-status {
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 600;
+  word-break: break-word;
 }
 
 .fleet-status.online-unlocked {
@@ -704,25 +741,28 @@ input:focus, select:focus, textarea:focus {
 }
 
 .fleet-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
 }
 
 .btn-screenshot {
   background: rgba(56, 189, 248, 0.15);
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.35);
-  padding: 7px 13px;
-  border-radius: 8px;
+  padding: 9px 10px;
+  border-radius: 9px;
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  white-space: nowrap;
 }
 
 .btn-screenshot:hover {
@@ -735,15 +775,18 @@ input:focus, select:focus, textarea:focus {
   background: rgba(16, 185, 129, 0.15);
   color: #34d399;
   border: 1px solid rgba(16, 185, 129, 0.35);
-  padding: 7px 12px;
-  border-radius: 8px;
+  padding: 9px 10px;
+  border-radius: 9px;
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  white-space: nowrap;
 }
 
 .btn-update-board:hover {

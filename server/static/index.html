@@ -67,8 +67,9 @@
     <!-- Navigasyon Sekmeleri -->
     <nav class="nav-tabs">
       <button class="tab-btn active" onclick="switchTab('teacher')">👨‍🏫 Öğretmen</button>
-      <button class="tab-btn" onclick="switchTab('offline')">🔢 Çevrimdışı PIN</button>
-      <button class="tab-btn" onclick="switchTab('admin')">📢 Müdür / İdare</button>
+      <button class="tab-btn" onclick="switchTab('offline')">🔢 PIN</button>
+      <button class="tab-btn" onclick="switchTab('fleet')">🖥️ Tahtalar</button>
+      <button class="tab-btn" onclick="switchTab('admin')">📢 İdare</button>
     </nav>
 
     <!-- SEKME 1: ÖĞRETMEN KİLİT KONTROLÜ -->
@@ -143,13 +144,36 @@
       </div>
     </section>
 
-    <!-- SEKME 3: MÜDÜR / İDARE YÖNETİM & ANONS PANELİ -->
+    <!-- SEKME 3: CANLI TAHTALAR & EKRAN İZLEME -->
+    <section id="fleetTab" class="tab-content">
+      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
+        <div class="input-group" style="margin-bottom: 0;">
+          <label for="fleetAdminPin">🔑 İdare Giriş Kodu:</label>
+          <input type="password" id="fleetAdminPin" placeholder="Örn: 9999" maxlength="8" inputmode="numeric" oninput="syncAdminPin('fleetAdminPin')">
+          <small class="hint">Ekran izleme ve tekil güncelleme için gereklidir (İdare sekmesiyle ortak hatırlanır).</small>
+        </div>
+      </div>
+
+      <div class="card admin-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom: 4px;">
+          <h3 style="margin:0;">🖥️ Canlı Tahtalar & Ekran İzleme</h3>
+          <button type="button" class="btn-refresh-fleet" title="Yenile" onclick="fetchAdminFleet()">🔄 Yenile</button>
+        </div>
+        <p class="hint">Tahtanın o anki ekranını görmek için <strong>📸 Ekranı Gör</strong>, güncellemek için <strong>🔄 Güncelle</strong> butonuna dokunun.</p>
+
+        <div id="adminFleetContainer" class="fleet-grid">
+          <div style="text-align:center; padding:18px; color:#94a3b8;">Tahtalar taranıyor...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SEKME 4: MÜDÜR / İDARE YÖNETİM & ANONS PANELİ -->
     <section id="adminTab" class="tab-content">
       <!-- İdare PIN Doğrulama Girişi -->
       <div class="card admin-card mb-3" style="margin-bottom: 14px;">
         <div class="input-group" style="margin-bottom: 0;">
           <label for="adminPin">🔑 İdare Giriş Kodu:</label>
-          <input type="password" id="adminPin" placeholder="Örn: 9999" maxlength="8" inputmode="numeric">
+          <input type="password" id="adminPin" placeholder="Örn: 9999" maxlength="8" inputmode="numeric" oninput="syncAdminPin('adminPin')">
           <small class="hint">İdare ve yönetim işlemleri için gereklidir (tarayıcınızda hatırlanır).</small>
         </div>
       </div>
@@ -178,20 +202,7 @@
         </div>
       </div>
 
-      <!-- KART 2: CANLI TAHTA LİSTESİ & ANLIK EKRAN GÖRÜNTÜSÜ -->
-      <div class="card admin-card mb-3" style="margin-bottom: 14px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 4px;">
-          <h3 style="margin:0;">🖥️ Canlı Tahtalar & Ekran İzleme</h3>
-          <button type="button" class="btn-refresh" title="Yenile" onclick="fetchAdminFleet()">🔄 Yenile</button>
-        </div>
-        <p class="hint">Tahtanın o anki ekranını görmek için <strong>📸 Ekranı Gör</strong> butonuna dokunun.</p>
-
-        <div id="adminFleetContainer" class="fleet-grid">
-          <div style="text-align:center; padding:18px; color:#94a3b8;">Tahtalar taranıyor...</div>
-        </div>
-      </div>
-
-      <!-- KART 3: MÜDÜR DUYURU & ANONS PANELİ -->
+      <!-- KART 2: MÜDÜR DUYURU & ANONS PANELİ -->
       <div class="card admin-card mb-3" style="margin-bottom: 14px;">
         <h3>📢 Mavi Işıklı Kayan Duyuru</h3>
         <p class="hint">Tahtaların en üstünde kayan LED bant duyurusu yayınlar.</p>
