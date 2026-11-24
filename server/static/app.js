@@ -495,18 +495,29 @@ function renderAdminBoardFleet(boards) {
   container.innerHTML = "";
   boards.forEach(b => {
     const isUnlocked = b.status === "unlocked";
-    const statusText = isUnlocked ? "🟢 Açık (Derste)" : "🔒 Kilitli (Beklemede)";
-    const statusClass = isUnlocked ? "online-unlocked" : "online-locked";
+    const isUpdating = b.status === "updating";
+    let statusText = isUnlocked ? "🟢 Açık (Derste)" : "🔒 Kilitli (Beklemede)";
+    let statusClass = isUnlocked ? "online-unlocked" : "online-locked";
+    if (isUpdating) {
+      statusText = b.update_msg ? `🔄 ${escapeHtml(b.update_msg)}` : "🔄 Güncelleniyor...";
+      statusClass = "online-updating";
+    }
     const displayName = b.name || b.id;
+    const versionBadge = b.version
+      ? `<span class="fleet-version-badge">${escapeHtml(b.version)}</span>`
+      : "";
 
     const card = document.createElement("div");
     card.className = "fleet-card";
     card.innerHTML = `
       <div class="fleet-info">
-        <span class="fleet-name">🖥️ ${escapeHtml(displayName)}</span>
+        <span class="fleet-name">🖥️ ${escapeHtml(displayName)} ${versionBadge}</span>
         <span class="fleet-status ${statusClass}">${statusText}</span>
       </div>
       <div class="fleet-actions">
+        <button type="button" class="btn-update-board" onclick="triggerSingleBoardUpdate('${escapeHtml(b.id)}', '${escapeHtml(displayName)}')" title="Bu tahtayı uzaktan güncelle">
+          🔄 Güncelle
+        </button>
         <button type="button" class="btn-screenshot" onclick="openScreenshotModal('${escapeHtml(b.id)}', '${escapeHtml(displayName)}')">
           📸 Ekranı Gör
         </button>
@@ -602,7 +613,8 @@ async function triggerBulkAction(action) {
   const endpointMap = {
     lock: "/api/bulk/lock",
     unlock: "/api/bulk/unlock",
-    poweroff: "/api/bulk/poweroff"
+    poweroff: "/api/bulk/poweroff",
+    update: "/api/bulk/update"
   };
 
   if (action === "unlock" && !confirm("⚠️ DİKKAT: Okuldaki tüm akıllı tahtaların kilidi AÇILACAKTIR!\n\nOnaylıyor musunuz?")) {
@@ -638,6 +650,50 @@ function confirmBulkPoweroff() {
 
   if (confirm("🛑 DİKKAT: Okuldaki açık olan TÜM akıllı tahtalar tamamen kapatılacaktır (shutdown)!\n\nDevam etmek istiyor musunuz?")) {
     triggerBulkAction("poweroff");
+  }
+}
+
+function confirmBulkUpdate() {
+  const adminPin = document.getElementById("adminPin").value.trim();
+  if (!adminPin) {
+    showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
+    document.getElementById("adminPin").focus();
+    return;
+  }
+
+  if (confirm("🔄 DİKKAT: Okuldaki çevrimiçi TÜM akıllı tahtalar GitHub'dan en güncel sürüme otomatik güncellenip yeniden başlatılacaktır.\n\nDevam etmek istiyor musunuz?")) {
+    triggerBulkAction("update");
+  }
+}
+
+async function triggerSingleBoardUpdate(boardId, boardName) {
+  const adminPin = document.getElementById("adminPin").value.trim();
+  if (!adminPin) {
+    showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
+    document.getElementById("adminPin").focus();
+    return;
+  }
+
+  if (!confirm(`🔄 '${boardName}' tahtası GitHub üzerinden en güncel sürüme güncellenip yeniden başlatılsın mı?`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/board/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ board_id: boardId, admin_pin: adminPin })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showToast(data.message, "success");
+      fetchOnlineBoards();
+    } else {
+      showToast(data.detail || "Güncelleme komutu gönderilemedi!", "error");
+    }
+  } catch (err) {
+    showToast("Sunucu hatası: " + err, "error");
   }
 }
 

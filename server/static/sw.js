@@ -1,5 +1,5 @@
 // ETAP Akıllı Kilit - Service Worker (PWA Desteği & Çevrimdışı Mod)
-const CACHE_NAME = 'etap-smartlock-v1';
+const CACHE_NAME = 'etap-smartlock-v1.4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

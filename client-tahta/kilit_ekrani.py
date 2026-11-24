@@ -39,7 +39,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.3.1"
+APP_VERSION = "v1.4.0"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -320,7 +320,8 @@ class WebSocketClientThread(QThread):
     def _build_url(self):
         import urllib.parse
         encoded_name = urllib.parse.quote(self.board_name)
-        self.ws_url = f"{self.raw_ws_url}/{self.device_id}?name={encoded_name}"
+        encoded_ver = urllib.parse.quote(APP_VERSION)
+        self.ws_url = f"{self.raw_ws_url}/{self.device_id}?name={encoded_name}&version={encoded_ver}"
 
     def run(self):
         if not websockets:
@@ -383,6 +384,22 @@ class WebSocketClientThread(QThread):
                 return True
             except Exception as e:
                 print(f"[WS] Ekran goruntusu gonderme hatasi: {e}")
+        return False
+
+    def send_status_update(self, status: str, detail: str = "") -> bool:
+        """Sunucuya tahtanın güncel durumunu (locked, unlocked, updating) ve detayını iletir."""
+        if self.ws and self.loop and self.loop.is_running():
+            try:
+                payload = json.dumps({
+                    "action": "status_update",
+                    "status": status,
+                    "detail": detail,
+                    "version": APP_VERSION
+                })
+                asyncio.run_coroutine_threadsafe(self.ws.send(payload), self.loop)
+                return True
+            except Exception as e:
+                print(f"[WS] Durum gonderme hatasi: {e}")
         return False
 
     def stop(self):
@@ -773,13 +790,41 @@ class BlueBannerTicker(QFrame):
 
 
 # -------------------------------------------------------------
-# 🔄 Arka Planda Canlı GitHub Güncelleme İşçisi (Worker Thread)
+# 🔄 Sürüm Karşılaştırma & Canlı GitHub Güncelleme İşçisi (Worker Thread)
 # İlerleme durumunu, indirme yüzdesini ve hataları canlı yayınlar.
 # -------------------------------------------------------------
+def parse_version_tuple(ver_str: str) -> tuple:
+    """'v1.4.0' veya '1.4.0-beta' gibi sürüm metinlerini karşılaştırılabilir demete çevirir."""
+    if not ver_str:
+        return (0,)
+    clean = ver_str.strip().lstrip("vV")
+    parts = []
+    for p in clean.split("."):
+        digits = ""
+        for ch in p:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts) if parts else (0,)
+
+
+def is_newer_version(remote_ver: str, local_ver: str) -> bool:
+    """Uzak sürüm numarası yerel sürümden daha yeniyse True döner."""
+    return parse_version_tuple(remote_ver) > parse_version_tuple(local_ver)
+
+
 class UpdateWorkerThread(QThread):
     progress_changed = pyqtSignal(int, str)
     finished_success = pyqtSignal(str)
     failed_error = pyqtSignal(str)
+    update_started = pyqtSignal(str)
+    already_up_to_date = pyqtSignal(str)
+
+    def __init__(self, only_if_newer: bool = False):
+        super().__init__()
+        self.only_if_newer = only_if_newer
 
     def run(self):
         import urllib.request
@@ -789,22 +834,32 @@ class UpdateWorkerThread(QThread):
 
         try:
             # 1. Aşama: GitHub Sürüm Kontrolü (%20)
-            self.progress_changed.emit(20, "🌐 GitHub sunucusuna bağlanılıyor...")
+            if not self.only_if_newer:
+                self.progress_changed.emit(20, "🌐 GitHub sunucusuna bağlanılıyor...")
             cache_bust = f"?t={int(time.time())}"
             version_url = f"https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/version.json{cache_bust}"
-            req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/1.1", "Cache-Control": "no-cache"})
-            remote_version = "v1.3.1"
+            req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/1.4", "Cache-Control": "no-cache"})
+            remote_version = APP_VERSION
+            version_fetched = False
             try:
                 with urllib.request.urlopen(req_ver, timeout=10) as resp:
                     v_data = json.loads(resp.read().decode("utf-8"))
-                    remote_version = v_data.get("version", "v1.3.1")
+                    remote_version = v_data.get("version", APP_VERSION)
+                    version_fetched = True
             except Exception:
                 pass
+
+            if self.only_if_newer:
+                if not version_fetched or not is_newer_version(remote_version, APP_VERSION):
+                    self.already_up_to_date.emit(APP_VERSION)
+                    return
+
+            self.update_started.emit(remote_version)
 
             # 2. Aşama: Yeni Kodları İndirme (%50)
             self.progress_changed.emit(50, f"📥 Yeni sürüm kodları indiriliyor ({remote_version})...")
             code_url = f"https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/client-tahta/kilit_ekrani.py{cache_bust}"
-            req_code = urllib.request.Request(code_url, headers={"User-Agent": "TahtaKilitUpdater/1.1", "Cache-Control": "no-cache"})
+            req_code = urllib.request.Request(code_url, headers={"User-Agent": "TahtaKilitUpdater/1.4", "Cache-Control": "no-cache"})
             with urllib.request.urlopen(req_code, timeout=15) as resp:
                 new_code = resp.read()
 
@@ -863,6 +918,207 @@ class UpdateWorkerThread(QThread):
             if "timed out" in err or "urlopen error" in err:
                 err = "İnternet bağlantısı kurulamadı. Lütfen tahtanın internetini kontrol edin."
             self.failed_error.emit(err)
+
+
+# -------------------------------------------------------------
+# 🔄 Uzaktan / Otomatik Güncelleme Kilit Ekranı Katmanı (Overlay)
+# Kilit ekranı üzerinde "Sistem Güncelleniyor..." ilerleme kartını gösterir.
+# -------------------------------------------------------------
+class UpdateProgressOverlayWidget(QWidget):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.lock_window = parent
+        self.init_ui()
+        self.hide()
+
+    def init_ui(self):
+        self.setStyleSheet("background: rgba(4, 10, 22, 0.92);")
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        card = QFrame()
+        card.setFixedSize(560, 300)
+        card.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #102542, stop:1 #09152b);
+                border: 2.5px solid #38bdf8;
+                border-radius: 22px;
+            }
+        """)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(30, 24, 30, 24)
+        card_layout.setSpacing(12)
+
+        icon_lbl = QLabel("🔄")
+        icon_lbl.setFont(QFont("Segoe UI Emoji", 34))
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setStyleSheet("border: none; background: transparent;")
+        card_layout.addWidget(icon_lbl)
+
+        self.lbl_title = QLabel("Sistem Güncelleniyor...")
+        self.lbl_title.setFont(QFont("Segoe UI", 18, QFont.Weight.ExtraBold))
+        self.lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_title.setStyleSheet("color: #f8fafc; border: none; background: transparent;")
+        card_layout.addWidget(self.lbl_title)
+
+        self.lbl_msg = QLabel("GitHub üzerinden yeni sürüm hazırlanıyor...")
+        self.lbl_msg.setFont(QFont("Segoe UI", 11, QFont.Weight.DemiBold))
+        self.lbl_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_msg.setWordWrap(True)
+        self.lbl_msg.setStyleSheet("color: #7dd3fc; border: none; background: transparent;")
+        card_layout.addWidget(self.lbl_msg)
+
+        prog_row = QHBoxLayout()
+        prog_row.setSpacing(12)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(16)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(10)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background: #060f1e;
+                border: 1.5px solid #334155;
+                border-radius: 8px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #38bdf8);
+                border-radius: 7px;
+            }
+        """)
+        prog_row.addWidget(self.progress_bar, 1)
+
+        self.lbl_pct = QLabel("%10")
+        self.lbl_pct.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        self.lbl_pct.setFixedWidth(48)
+        self.lbl_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.lbl_pct.setStyleSheet("color: #38bdf8; border: none; background: transparent;")
+        prog_row.addWidget(self.lbl_pct)
+
+        card_layout.addLayout(prog_row)
+
+        self.lbl_note = QLabel("Lütfen tahtayı kapatmayınız; işlem bitince kilit ekranı otomatik yeniden başlatılacaktır.")
+        self.lbl_note.setFont(QFont("Segoe UI", 9))
+        self.lbl_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_note.setWordWrap(True)
+        self.lbl_note.setStyleSheet("color: #94a3b8; border: none; background: transparent;")
+        card_layout.addWidget(self.lbl_note)
+
+        layout.addWidget(card)
+
+    def show_updating(self, title_text: str = "Sistem Güncelleniyor...", msg: str = "Bağlantı kuruluyor..."):
+        self.lbl_title.setText(title_text)
+        self.lbl_title.setStyleSheet("color: #f8fafc; border: none; background: transparent;")
+        self.lbl_msg.setText(msg)
+        self.lbl_msg.setStyleSheet("color: #7dd3fc; border: none; background: transparent;")
+        self.progress_bar.setValue(10)
+        self.lbl_pct.setText("%10")
+        self.setGeometry(0, 0, self.lock_window.width(), self.lock_window.height())
+        self.show()
+        self.raise_()
+
+    def update_progress(self, percent: int, msg: str):
+        self.progress_bar.setValue(percent)
+        self.lbl_pct.setText(f"%{percent}")
+        self.lbl_msg.setText(msg)
+
+    def show_success(self, msg: str):
+        self.progress_bar.setValue(100)
+        self.lbl_pct.setText("%100")
+        self.lbl_title.setText("✅ Güncelleme Tamamlandı")
+        self.lbl_title.setStyleSheet("color: #34d399; border: none; background: transparent;")
+        self.lbl_msg.setText(msg)
+        self.lbl_msg.setStyleSheet("color: #a7f3d0; border: none; background: transparent;")
+
+    def show_error(self, err: str):
+        self.lbl_title.setText("⚠️ Güncelleme Başarısız")
+        self.lbl_title.setStyleSheet("color: #f87171; border: none; background: transparent;")
+        self.lbl_msg.setText(err)
+        self.lbl_msg.setStyleSheet("color: #fca5a5; border: none; background: transparent;")
+
+    def hide_overlay(self):
+        self.hide()
+
+
+class DesktopUpdateBanner(QWidget):
+    """Masaüstü açıkken uzaktan güncelleme tetiklendiğinde sağ üstte çıkan kompakt bilgi bandı."""
+    def __init__(self):
+        super().__init__(None)
+        self.setWindowFlags(
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.init_ui()
+
+    def init_ui(self):
+        self.setFixedSize(360, 108)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(6, 6, 6, 6)
+
+        card = QFrame()
+        card.setStyleSheet("""
+            QFrame {
+                background: #0b1930;
+                border: 2px solid #38bdf8;
+                border-radius: 14px;
+            }
+        """)
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(14, 10, 14, 10)
+        cl.setSpacing(6)
+
+        self.lbl_title = QLabel("🔄 Sistem Güncelleniyor...")
+        self.lbl_title.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.lbl_title.setStyleSheet("color: #f8fafc; border: none; background: transparent;")
+        cl.addWidget(self.lbl_title)
+
+        self.lbl_msg = QLabel("Yeni sürüm indiriliyor...")
+        self.lbl_msg.setFont(QFont("Segoe UI", 9))
+        self.lbl_msg.setStyleSheet("color: #7dd3fc; border: none; background: transparent;")
+        cl.addWidget(self.lbl_msg)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(10)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar { background: #060f1e; border: 1px solid #334155; border-radius: 4px; }
+            QProgressBar::chunk { background: #38bdf8; border-radius: 3px; }
+        """)
+        cl.addWidget(self.progress_bar)
+        root.addWidget(card)
+
+    def show_top_right(self, title: str, msg: str):
+        self.lbl_title.setText(title)
+        self.lbl_title.setStyleSheet("color: #f8fafc; border: none; background: transparent;")
+        self.lbl_msg.setText(msg)
+        self.progress_bar.setValue(10)
+        screen = QApplication.primaryScreen()
+        if screen:
+            geo = screen.availableGeometry()
+            self.move(geo.right() - self.width() - 18, geo.top() + 18)
+        self.show()
+        self.raise_()
+
+    def update_progress(self, percent: int, msg: str):
+        self.progress_bar.setValue(percent)
+        self.lbl_msg.setText(f"%{percent} — {msg}")
+
+    def show_success(self, msg: str):
+        self.progress_bar.setValue(100)
+        self.lbl_title.setText("✅ Güncelleme Tamamlandı")
+        self.lbl_title.setStyleSheet("color: #34d399; border: none; background: transparent;")
+        self.lbl_msg.setText(msg)
+
+    def show_error(self, err: str):
+        self.lbl_title.setText("⚠️ Güncelleme Hatası")
+        self.lbl_title.setStyleSheet("color: #f87171; border: none; background: transparent;")
+        self.lbl_msg.setText(err)
 
 
 # -------------------------------------------------------------
@@ -1303,18 +1559,7 @@ class SettingsOverlayWidget(QWidget):
         self.lbl_status.setStyleSheet("color: #ef4444; font-weight: bold; border: none; background: transparent;")
 
     def _restart_application(self):
-        self.lock_window.is_locked = False
-        try:
-            self.lock_window.releaseKeyboard()
-        except Exception:
-            pass
-        if hasattr(QApplication.instance(), "_single_instance_lock"):
-            try:
-                QApplication.instance()._single_instance_lock.unlock()
-            except Exception:
-                pass
-        QProcess.startDetached(sys.executable, sys.argv)
-        QApplication.quit()
+        self.lock_window.restart_application()
 
 
 # -------------------------------------------------------------
@@ -2324,11 +2569,21 @@ class LockScreenWindow(QMainWindow):
         self.settings_overlay = None
         self.admin_settings_auth_overlay = None
         self.admin_exit_overlay = None
+        self.update_overlay = None
         self.desktop_announcement_dlg = None
+        self.desktop_update_banner = None
+        self.is_updating = False
+        self.remote_update_thread = None
 
         self.init_ui()
         self.init_network()
         self.setup_kiosk_security()
+
+        # Otomatik arka plan güncelleme kontrolü (ilk kontrol 25 sn sonra, ardından 30 dk'da bir)
+        QTimer.singleShot(25000, self.check_auto_update)
+        self.timer_auto_update = QTimer(self)
+        self.timer_auto_update.timeout.connect(self.check_auto_update)
+        self.timer_auto_update.start(30 * 60 * 1000)
 
     def init_ui(self):
         self.setWindowTitle(f"{APP_NAME} — {DEVELOPER_NAME}")
@@ -2737,6 +2992,9 @@ class LockScreenWindow(QMainWindow):
         self.admin_exit_overlay = AdminExitOverlayWidget(self)
         self.admin_exit_overlay.hide()
 
+        self.update_overlay = UpdateProgressOverlayWidget(self)
+        self.update_overlay.hide()
+
     def _set_pin_display_style(self, mode: str = "normal"):
         if hasattr(self, "pin_display") and isinstance(self.pin_display, FrostedPinCapsule):
             self.pin_display.set_mode_and_length(mode, len(self.entered_pin))
@@ -2778,7 +3036,7 @@ class LockScreenWindow(QMainWindow):
         self.activateWindow()
         self._ensure_keyboard_grab()
         QTimer.singleShot(150, self._ensure_keyboard_grab)
-        for overlay in [self.announcement_overlay, self.settings_overlay, self.admin_settings_auth_overlay, self.admin_exit_overlay]:
+        for overlay in [self.announcement_overlay, self.settings_overlay, self.admin_settings_auth_overlay, self.admin_exit_overlay, self.update_overlay]:
             if overlay:
                 overlay.setGeometry(0, 0, self.width(), self.height())
 
@@ -2813,7 +3071,8 @@ class LockScreenWindow(QMainWindow):
             getattr(self, "announcement_overlay", None),
             getattr(self, "settings_overlay", None),
             getattr(self, "admin_settings_auth_overlay", None),
-            getattr(self, "admin_exit_overlay", None)
+            getattr(self, "admin_exit_overlay", None),
+            getattr(self, "update_overlay", None)
         ]:
             if overlay:
                 overlay.setGeometry(0, 0, self.width(), self.height())
@@ -3066,10 +3325,116 @@ class LockScreenWindow(QMainWindow):
         elif action == "take_screenshot":
             request_id = data.get("request_id", "")
             self.capture_and_send_screenshot(request_id)
+        elif action == "update_client":
+            self.start_remote_update(by=data.get("by", "Yönetici"), only_if_newer=False)
         elif action == "banner_message":
             msg = data.get("message", "")
             duration = data.get("duration_sec", 45)
             self.show_announcement(msg, duration)
+
+    # -------------------------------------------------------------
+    # 🔄 Merkezi Uzaktan & Otomatik Güncelleme Kontrolü
+    # -------------------------------------------------------------
+    def restart_application(self):
+        """Tek örnek kilidini kaldırıp güncellenmiş uygulamayı temiz şekilde yeniden başlatır."""
+        self.is_locked = False
+        try:
+            self.releaseKeyboard()
+        except Exception:
+            pass
+        if getattr(self, "desktop_update_banner", None):
+            try:
+                self.desktop_update_banner.hide()
+            except Exception:
+                pass
+        if hasattr(QApplication.instance(), "_single_instance_lock"):
+            try:
+                QApplication.instance()._single_instance_lock.unlock()
+            except Exception:
+                pass
+        QProcess.startDetached(sys.executable, sys.argv)
+        QApplication.quit()
+
+    def check_auto_update(self):
+        """Tahta kilitli ve boştayken GitHub üzerinden daha yeni sürüm olup olmadığını sessizce denetler."""
+        if self.is_locked and not self.is_updating:
+            self.start_remote_update(by="Otomatik", only_if_newer=True)
+
+    def _show_update_ui(self, title: str, msg: str):
+        if self.is_locked and getattr(self, "update_overlay", None):
+            self.update_overlay.show_updating(title, msg)
+        else:
+            if not getattr(self, "desktop_update_banner", None):
+                self.desktop_update_banner = DesktopUpdateBanner()
+            self.desktop_update_banner.show_top_right(title, msg)
+
+    def _hide_update_ui(self):
+        if getattr(self, "update_overlay", None):
+            self.update_overlay.hide_overlay()
+        if getattr(self, "desktop_update_banner", None):
+            self.desktop_update_banner.hide()
+
+    def start_remote_update(self, by: str = "Yönetici", only_if_newer: bool = False):
+        """Uzaktan yönetici komutuyla veya otomatik sürüm algılamasıyla güncellemeyi başlatır."""
+        if self.is_updating:
+            return
+        self.is_updating = True
+
+        if not only_if_newer:
+            self._show_update_ui("Sistem Güncelleniyor...", "GitHub üzerinden yeni sürüm hazırlanıyor...")
+            if getattr(self, "ws_thread", None):
+                self.ws_thread.send_status_update("updating", "Güncelleme başlatıldı...")
+
+        self.remote_update_thread = UpdateWorkerThread(only_if_newer=only_if_newer)
+        self.remote_update_thread.update_started.connect(self._on_auto_update_started)
+        self.remote_update_thread.progress_changed.connect(self._on_remote_update_progress)
+        self.remote_update_thread.finished_success.connect(self._on_remote_update_success)
+        self.remote_update_thread.failed_error.connect(self._on_remote_update_error)
+        self.remote_update_thread.already_up_to_date.connect(self._on_already_up_to_date)
+        self.remote_update_thread.start()
+
+    def _on_auto_update_started(self, remote_version: str):
+        overlay_vis = getattr(self, "update_overlay", None) and self.update_overlay.isVisible()
+        banner_vis = getattr(self, "desktop_update_banner", None) and self.desktop_update_banner.isVisible()
+        if not overlay_vis and not banner_vis:
+            self._show_update_ui(
+                f"Otomatik Güncelleme ({remote_version})",
+                "Yeni sürüm bulundu, indiriliyor..."
+            )
+            if getattr(self, "ws_thread", None):
+                self.ws_thread.send_status_update("updating", f"Otomatik güncelleme ({remote_version})")
+
+    def _on_remote_update_progress(self, percent: int, msg: str):
+        if getattr(self, "update_overlay", None) and self.update_overlay.isVisible():
+            self.update_overlay.update_progress(percent, msg)
+        elif getattr(self, "desktop_update_banner", None) and self.desktop_update_banner.isVisible():
+            self.desktop_update_banner.update_progress(percent, msg)
+        if getattr(self, "ws_thread", None):
+            self.ws_thread.send_status_update("updating", f"%{percent} - {msg}")
+
+    def _on_remote_update_success(self, msg: str):
+        if getattr(self, "update_overlay", None) and self.update_overlay.isVisible():
+            self.update_overlay.show_success(msg)
+        elif getattr(self, "desktop_update_banner", None) and self.desktop_update_banner.isVisible():
+            self.desktop_update_banner.show_success(msg)
+        if getattr(self, "ws_thread", None):
+            self.ws_thread.send_status_update("locked", "Yeniden başlatılıyor...")
+        QTimer.singleShot(1600, self.restart_application)
+
+    def _on_remote_update_error(self, err: str):
+        if getattr(self, "update_overlay", None) and self.update_overlay.isVisible():
+            self.update_overlay.show_error(err)
+            QTimer.singleShot(4000, self._hide_update_ui)
+        elif getattr(self, "desktop_update_banner", None) and self.desktop_update_banner.isVisible():
+            self.desktop_update_banner.show_error(err)
+            QTimer.singleShot(4000, self._hide_update_ui)
+        self.is_updating = False
+        if getattr(self, "ws_thread", None):
+            curr_status = "locked" if self.is_locked else "unlocked"
+            self.ws_thread.send_status_update(curr_status, "")
+
+    def _on_already_up_to_date(self, _ver: str):
+        self.is_updating = False
 
     def capture_and_send_screenshot(self, request_id: str):
         """Müdür panelinin talebiyle anlık ekran görüntüsünü çeker, optimize edip gönderir."""

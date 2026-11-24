@@ -52,6 +52,10 @@ class BoardConnectionManager:
         self.board_status: Dict[str, str] = {}
         # board_id -> sınıf/tahta görünen adı (Örn: "9-A")
         self.board_names: Dict[str, str] = {}
+        # board_id -> istemci sürümü (Örn: "v1.4.0")
+        self.board_versions: Dict[str, str] = {}
+        # board_id -> canlı güncelleme/durum detay mesajı
+        self.board_update_msg: Dict[str, str] = {}
         # Merkezi Okul / Kurum Adı (Tüm bağlı tahtalara yayınlanır)
         self.school_name: str = self.load_school_name()
         # Bekleyen ekran görüntüsü yanıtları (request_id -> asyncio.Future)
@@ -75,12 +79,14 @@ class BoardConnectionManager:
         except Exception as e:
             logger.error(f"Ayarlar kaydedilemedi: {e}")
 
-    async def connect(self, board_id: str, websocket: WebSocket, name: Optional[str] = None):
+    async def connect(self, board_id: str, websocket: WebSocket, name: Optional[str] = None, version: Optional[str] = None):
         await websocket.accept()
         self.active_connections[board_id] = websocket
         self.board_last_seen[board_id] = time.time()
         self.board_status[board_id] = "locked"
         self.board_names[board_id] = name or self.board_names.get(board_id, board_id)
+        self.board_versions[board_id] = version or self.board_versions.get(board_id, "")
+        self.board_update_msg.pop(board_id, None)
         logger.info(f"🟢 Tahta bağlandı: [{board_id}] ('{self.board_names[board_id]}') (Toplam bağlı: {len(self.active_connections)})")
 
     def update_name(self, board_id: str, new_name: str):
@@ -97,6 +103,8 @@ class BoardConnectionManager:
                     del self.board_status[board_id]
                 if board_id in self.board_last_seen:
                     del self.board_last_seen[board_id]
+                self.board_versions.pop(board_id, None)
+                self.board_update_msg.pop(board_id, None)
                 logger.info(f"🔴 Tahta ayrıldı ve listeden temizlendi: [{board_id}]")
             else:
                 logger.info(f"ℹ️ [{board_id}] için eski bir soket kapandı, mevcut aktif soket korunuyor.")
@@ -151,7 +159,9 @@ class BoardConnectionManager:
                 "name": self.board_names.get(b_id, b_id),
                 "status": self.board_status.get(b_id, "locked"),
                 "online": b_id in self.active_connections,
-                "last_seen": int(self.board_last_seen.get(b_id, time.time()))
+                "last_seen": int(self.board_last_seen.get(b_id, time.time())),
+                "version": self.board_versions.get(b_id, ""),
+                "update_msg": self.board_update_msg.get(b_id, "")
             })
         return boards
 
@@ -166,6 +176,8 @@ class BoardConnectionManager:
                     del self.board_names[b_id]
                 if b_id in self.board_status:
                     del self.board_status[b_id]
+                self.board_versions.pop(b_id, None)
+                self.board_update_msg.pop(b_id, None)
                 removed += 1
         return removed
 
@@ -205,14 +217,19 @@ class ScreenshotRequest(BaseModel):
 class BulkActionRequest(BaseModel):
     admin_pin: str
 
+class BoardUpdateRequest(BaseModel):
+    board_id: str
+    admin_pin: str
+
 # -------------------------------------------------------------
 # 🌐 WebSocket Uç Noktası (Pardus ETAP Tahtaları Buraya Bağlanır)
 # -------------------------------------------------------------
 @app.websocket("/ws/board/{board_id}")
 async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Optional[str] = None):
     query_name = websocket.query_params.get("name")
+    query_version = websocket.query_params.get("version")
     initial_name = query_name or name or board_id
-    await manager.connect(board_id, websocket, initial_name)
+    await manager.connect(board_id, websocket, initial_name, version=query_version)
     try:
         # Tahtaya ilk bağlantı onayı ve merkezi okul adını gönder
         await websocket.send_text(json.dumps({
@@ -233,6 +250,10 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Op
 
                 if action == "status_update":
                     manager.board_status[board_id] = msg.get("status", "locked")
+                    if "detail" in msg:
+                        manager.board_update_msg[board_id] = str(msg.get("detail", ""))
+                    if msg.get("version"):
+                        manager.board_versions[board_id] = str(msg["version"])
                 elif action == "update_name":
                     new_name = msg.get("name", "").strip()
                     if new_name:
@@ -595,6 +616,66 @@ async def bulk_poweroff_boards(req: BulkActionRequest):
         "success": True,
         "count": count,
         "message": f"Bağlı olan {count} adet tahtaya kapatma (güç kesme) emri gönderildi! 🔌"
+    }
+
+@app.post("/api/bulk/update")
+async def bulk_update_boards(req: BulkActionRequest):
+    """Müdür panelinden açık olan tüm tahtalara tek tıkla uzaktan güncelleme komutu gönderir"""
+    if req.admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    count = await manager.broadcast_all({
+        "action": "update_client",
+        "by": "admin",
+        "timestamp": time.time()
+    })
+    for b_id in manager.active_connections:
+        manager.board_status[b_id] = "updating"
+        manager.board_update_msg[b_id] = "Güncelleme başlatıldı..."
+
+    return {
+        "success": True,
+        "count": count,
+        "message": f"Bağlı olan {count} adet tahtaya uzaktan güncelleme emri gönderildi! 🔄"
+    }
+
+@app.post("/api/board/update")
+async def update_single_board(req: BoardUpdateRequest):
+    """Müdür panelinden seçili tek bir tahtaya uzaktan güncelleme komutu gönderir"""
+    if req.admin_pin != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    target_id = manager.find_board(req.board_id)
+    if not target_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"'{req.board_id}' tahtası şu anda çevrimdışı."
+        )
+
+    sent = await manager.send_to_board(target_id, {
+        "action": "update_client",
+        "by": "admin",
+        "timestamp": time.time()
+    })
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Tahtaya güncelleme komutu iletilemedi."
+        )
+
+    manager.board_status[target_id] = "updating"
+    manager.board_update_msg[target_id] = "Güncelleme başlatıldı..."
+
+    return {
+        "success": True,
+        "board_id": target_id,
+        "message": f"'{manager.board_names.get(target_id, target_id)}' tahtasına uzaktan güncelleme komutu gönderildi! 🔄"
     }
 
 # -------------------------------------------------------------

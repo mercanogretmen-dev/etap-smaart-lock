@@ -17,22 +17,25 @@ Pardus ETAP yüklü akıllı tahtalar için geliştirilen hibrit kilit, uzaktan 
    * Fiziksel ağ kartı MAC adresleri (`/sys/class/net/*/address`, `uuid.getnode()`) + BIOS/Anakart DMI parmak izi (`hardware_elements`) ile Clonezilla/DD klon disk imajlarını ilk açılışta otomatik algılayıp benzersiz `etap-<8hex>` ID üretir.
    * Eski klonlanmış/çakışan `etap-57435795` kimliği kara listeye alınmıştır; güncelleme/açılış sırasında otomatik temizlenip yeni donanım ID'si atanır.
    * Tahta Ayarlar penceresinde donanım kimliği görüntülenir ve **"🔄 Kimliği Yenile"** butonu ile tek dokunuşla yenilenebilir.
-7. **Paketleme & Tek Tıkla Güncelleme:**
-   * `build_deb_package.py` ile saf Python `.deb` paketi üretimi (`tahta-kilit_1.3.1_all.deb` ve `tahta-kilit.deb`).
+7. **Paketleme & Tek Tıkla / Merkezi Güncelleme (`v1.4.0`):**
+   * `build_deb_package.py` ile saf Python `.deb` paketi üretimi (`tahta-kilit_1.4.0_all.deb` ve `tahta-kilit.deb`).
+   * **Merkezi Uzaktan Güncelleme:** Mobil Müdür Panelinden **"🔄 Tüm Tahtaları Güncelle"** (`POST /api/bulk/update`) veya her tahtanın kartındaki **"🔄 Güncelle"** (`POST /api/board/update`) butonuyla tüm tahtalar aynı anda güncellenebilir; panelde her tahtanın kurulu sürümü (`v1.4.0`) ve canlı güncelleme yüzdesi görünür.
+   * **Kilit Ekranında Canlı Güncelleme & Otomatik Kontrol:** Güncelleme sırasında kilit ekranında **"Sistem Güncelleniyor..."** ilerleme kartı (`UpdateProgressOverlayWidget`) — masaüstü açıksa sağ üstte kompakt bant (`DesktopUpdateBanner`) — gösterilir ve işlem bitince uygulama kendini yeniden başlatır. Tahtalar kilitliyken açılışta (25 sn sonra) ve 30 dakikada bir GitHub `version.json` üzerinden daha yeni sürüm kontrolü (`is_newer_version`) yapıp otomatik güncellenir.
    * Terminalden `sudo tahta-kilit-guncelle` (`guncelle.sh`) veya tahta Ayarlar menüsünden GitHub üzerinden canlı güncelleme (`version.json`).
 
 ## 📂 Dosya Yapısı
 * `server/`: FastAPI + WebSockets sunucusu (`main.py`, `config.py`, `data/settings.json`), `Dockerfile` ve `static/` altında mobil telefon arayüzü (PWA/QR okuyucu, `manifest.json`, `sw.js`, mobil ikonlar).
 * `client-tahta/`: PyQt6 tam ekran kiosk kilit ekranı (`kilit_ekrani.py`), varsayılan şablon ayarları (`config.ini` — boş `cihaz_id`), Pardus kurulum betiği (`kur_pardus.sh`) ve görseller (`assets/`).
 * `build_deb_package.py`, `guncelle.sh`, `kaldir_pardus.sh`, `version.json`: Saf Python Debian (`.deb`) paketleyici, hızlı güncelleme/kaldırma betikleri ve GitHub sürüm bildirimi.
-* `tests/test_system.py`: Sunucu API/WebSocket, toplu işlem, canlı ekran görüntüsü ve klon koruma (anti-clone) doğrulamalarını içeren 8 otomatik test.
+* `tests/test_system.py`: Sunucu API/WebSocket, toplu işlem, canlı ekran görüntüsü, klon koruma (anti-clone) ve merkezi/otomatik güncelleme doğrulamalarını içeren 9 otomatik test.
 * `docker-compose.yml`: Yerel Docker testi için.
 * `render.yaml`: Render.com ücretsiz bulut dağıtımı için.
 * `KULLANIM_KILAVUZU.md`: Adım adım test, kullanım ve iOS/Android PWA mobil kurulum kılavuzu.
 * `MEB_VE_RENDER_NOTLARI.md`: Render 15 dk uyku/kota optimizasyonu (cron-job.org) ve MEB Fatih ağı SSL/filtre rehberi.
 
 ## 🏷️ Versiyon Takibi & Kararlı Sürümler (Git)
-* **`v1.3.1` (Güncel Kararlı Sürüm — Etiket / Tag) — Commit `3e4e367`:** Fiziksel MAC + DMI donanım parmak izi ile Klon İmaj Koruması (Anti-Cloning), `etap-57435795` kara liste temizliği, Ayarlar ekranında `"🔄 Kimliği Yenile"`, canlı ekran görüntüsü (`v1.3.0`), toplu müdür yönetimi (`v1.2.0`–`v1.3.0`) ve 8/8 geçen test paketi.
+* **`v1.4.0` (Güncel Kararlı Sürüm — Etiket / Tag):** Merkezi Uzaktan Güncelleme (`/api/bulk/update`, `/api/board/update`), mobil panelde sürüm rozeti ve canlı güncelleme yüzdesi, kilit ekranında `UpdateProgressOverlayWidget` ve masaüstünde `DesktopUpdateBanner`, açılışta ve 30 dakikada bir otomatik arka plan sürüm kontrolü, `tahta-kilit_1.4.0_all.deb` paketi ve 9/9 geçen test paketi.
+* **`v1.3.1` (Etiket / Tag) — Commit `3e4e367`:** Fiziksel MAC + DMI donanım parmak izi ile Klon İmaj Koruması (Anti-Cloning), `etap-57435795` kara liste temizliği, Ayarlar ekranında `"🔄 Kimliği Yenile"`, canlı ekran görüntüsü (`v1.3.0`), toplu müdür yönetimi (`v1.2.0`–`v1.3.0`) ve 8/8 geçen test paketi.
 * **`v1.0.0-stable` (Etiket / Tag) & `stable-v1.0` (Dal / Branch):** Commit `ab744e0` — Kiosk güvenliği (`BypassWindowManagerHint`), dahili katmanlar (Ayarlar, Yönetici Çıkışı, Duyuru), fiziksel + dokunmatik klavye desteği, masaüstü açıkken müdür duyuru penceresi ve iOS/Android PWA mobil arayüzünün tam çalışır, test edilmiş ilk kararlı sürümü.
 * **Yerel Yedek Arşivi:** `backups/etap-smart-lock-v1.0.0-stable.zip`
 * **İlk Kararlı Sürüme Geri Dönme Komutu:** `git checkout v1.0.0-stable` veya `git reset --hard v1.0.0-stable`

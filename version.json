@@ -1,13 +1,13 @@
 {
-  "version": "v1.3.1",
+  "version": "v1.4.0",
   "app_name": "Tahta Kilit",
-  "release_date": "2026-11-13",
-  "description": "Klon İmaj & Çakışan Cihaz ID Koruması (Anti-Cloning Hardware Fingerprint) ve Akıllı Tahta Ayrımı.",
+  "release_date": "2026-11-24",
+  "description": "Merkezi Uzaktan Güncelleme (Tekli/Toplu), Kilit Ekranında Canlı İlerleme Katmanı ve Otomatik Güncelleyici.",
   "changelog": [
-    "Klon İmaj Koruması (Anti-Cloning): Aynı Pardus ETAP disk imajı (Clonezilla/DD) birden fazla tahtaya yüklendiğinde, her tahtanın fiziksel ağ kartı (MAC) ve BIOS donanım parmak izi otomatik algılanarak her tahtaya benzersiz bir Cihaz ID atanır.",
-    "Eski sürümlerden veya kalıp imajdan kalan çakışan 'etap-57435795' kimliği otomatik tespit edilip temizlenir ve donanıma özel yeni kimlikle güncellenir.",
-    "Tahta Kilit Ayarlar penceresine fiziksel 'Cihaz Kimliği' bilgisi ve gerektiğinde tek tıkla yeni kimlik üreten '🔄 Kimliği Yenile' butonu eklendi.",
-    "Debian (.deb) paket şablonundaki sabit cihaz ID kaldırıldı, ilk kurulumda temiz donanım algılaması sağlandı.",
-    "Uzaktan canlı ekran görüntüsü alma (📸 Ekranı Gör) ve tek tıkla toplu tahta yönetimi (🔒 Kilitle, 🔓 Aç, 🛑 Kapat)."
+    "Mobil Müdür/İdare Paneline '🔄 Tüm Tahtaları Güncelle' (POST /api/bulk/update) ve her tahta kartına '🔄 Güncelle' (POST /api/board/update) butonları eklendi.",
+    "Tahta listesinde her tahtanın kurulu sürüm rozeti (Örn: v1.4.0) ve canlı güncelleme yüzdesi/durumu görüntülenir.",
+    "Kilit ekranına 'Sistem Güncelleniyor...' canlı ilerleme katmanı (UpdateProgressOverlayWidget) eklendi; masaüstü açıkken ise sağ üstte kompakt bilgi bandı gösterilir.",
+    "Tahtalara otomatik arka plan sürüm kontrolü eklendi: Kilitliyken açılışta ve 30 dakikada bir GitHub kontrolü yaparak yeni sürüm varsa otomatik günceller ve yeniden başlatır.",
+    "Klon İmaj Koruması (v1.3.1), canlı ekran görüntüsü alma ve toplu tahta yönetimi destekleri korunmuştur."
   ]
 }

@@ -677,6 +677,32 @@ input:focus, select:focus, textarea:focus {
   color: #f87171;
 }
 
+.fleet-status.online-updating {
+  color: #38bdf8;
+}
+
+.fleet-version-badge {
+  display: inline-block;
+  background: #1e293b;
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.btn-bulk-update {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: #fff;
+  font-weight: 700;
+}
+
+.btn-bulk-update:hover {
+  filter: brightness(1.08);
+}
+
 .fleet-actions {
   display: flex;
   align-items: center;
@@ -703,6 +729,27 @@ input:focus, select:focus, textarea:focus {
   background: #0284c7;
   color: #fff;
   border-color: #0284c7;
+}
+
+.btn-update-board {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-update-board:hover {
+  background: #059669;
+  color: #fff;
+  border-color: #059669;
 }
 
 .spinner {
