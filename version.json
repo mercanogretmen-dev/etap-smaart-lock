@@ -1,13 +1,13 @@
 {
-  "version": "v1.4.0",
+  "version": "v0.4.0",
   "app_name": "Tahta Kilit",
   "release_date": "2026-11-24",
   "description": "Merkezi Uzaktan Güncelleme (Tekli/Toplu), Kilit Ekranında Canlı İlerleme Katmanı ve Otomatik Güncelleyici.",
   "changelog": [
+    "Sürüm numaralandırması geliştirme/ön-yayın sürecine uygun 0.x serisine (v0.4.0) geçirildi.",
     "Mobil Müdür/İdare Paneline '🔄 Tüm Tahtaları Güncelle' (POST /api/bulk/update) ve her tahta kartına '🔄 Güncelle' (POST /api/board/update) butonları eklendi.",
-    "Tahta listesinde her tahtanın kurulu sürüm rozeti (Örn: v1.4.0) ve canlı güncelleme yüzdesi/durumu görüntülenir.",
+    "Tahta listesinde her tahtanın kurulu sürüm rozeti (Örn: v0.4.0) ve canlı güncelleme yüzdesi/durumu görüntülenir.",
     "Kilit ekranına 'Sistem Güncelleniyor...' canlı ilerleme katmanı (UpdateProgressOverlayWidget) eklendi; masaüstü açıkken ise sağ üstte kompakt bilgi bandı gösterilir.",
-    "Tahtalara otomatik arka plan sürüm kontrolü eklendi: Kilitliyken açılışta ve 30 dakikada bir GitHub kontrolü yaparak yeni sürüm varsa otomatik günceller ve yeniden başlatır.",
-    "Klon İmaj Koruması (v1.3.1), canlı ekran görüntüsü alma ve toplu tahta yönetimi destekleri korunmuştur."
+    "Tahtalara otomatik arka plan sürüm kontrolü eklendi: Kilitliyken açılışta ve 30 dakikada bir GitHub kontrolü yaparak yeni sürüm varsa otomatik günceller ve yeniden başlatır."
   ]
 }

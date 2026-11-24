@@ -39,7 +39,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v1.4.0"
+APP_VERSION = "v0.4.0"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -794,7 +794,7 @@ class BlueBannerTicker(QFrame):
 # İlerleme durumunu, indirme yüzdesini ve hataları canlı yayınlar.
 # -------------------------------------------------------------
 def parse_version_tuple(ver_str: str) -> tuple:
-    """'v1.4.0' veya '1.4.0-beta' gibi sürüm metinlerini karşılaştırılabilir demete çevirir."""
+    """'v0.4.0' veya '0.4.0-beta' gibi sürüm metinlerini karşılaştırılabilir demete çevirir."""
     if not ver_str:
         return (0,)
     clean = ver_str.strip().lstrip("vV")
@@ -838,7 +838,7 @@ class UpdateWorkerThread(QThread):
                 self.progress_changed.emit(20, "🌐 GitHub sunucusuna bağlanılıyor...")
             cache_bust = f"?t={int(time.time())}"
             version_url = f"https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/version.json{cache_bust}"
-            req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/1.4", "Cache-Control": "no-cache"})
+            req_ver = urllib.request.Request(version_url, headers={"User-Agent": "TahtaKilitUpdater/0.4", "Cache-Control": "no-cache"})
             remote_version = APP_VERSION
             version_fetched = False
             try:
@@ -859,7 +859,7 @@ class UpdateWorkerThread(QThread):
             # 2. Aşama: Yeni Kodları İndirme (%50)
             self.progress_changed.emit(50, f"📥 Yeni sürüm kodları indiriliyor ({remote_version})...")
             code_url = f"https://raw.githubusercontent.com/mercanogretmen-dev/etap-smaart-lock/main/client-tahta/kilit_ekrani.py{cache_bust}"
-            req_code = urllib.request.Request(code_url, headers={"User-Agent": "TahtaKilitUpdater/1.4", "Cache-Control": "no-cache"})
+            req_code = urllib.request.Request(code_url, headers={"User-Agent": "TahtaKilitUpdater/0.4", "Cache-Control": "no-cache"})
             with urllib.request.urlopen(req_code, timeout=15) as resp:
                 new_code = resp.read()
 

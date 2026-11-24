@@ -475,25 +475,26 @@ class TestEtapSmartLockSystem(unittest.TestCase):
             mod_kilit.save_config = orig_save
 
     # -------------------------------------------------------------------------
-    # 9. Merkezi Uzaktan Güncelleme & Sürüm Karşılaştırma Testi (v1.4.0)
+    # 9. Merkezi Uzaktan Güncelleme & Sürüm Karşılaştırma Testi (v0.4.0)
     # -------------------------------------------------------------------------
     def test_09_remote_and_bulk_update_api(self):
         """Tekli ve toplu uzaktan güncelleme uç noktalarını, sürüm bilgisini ve sürüm karşılaştırmayı test eder."""
         import importlib.util
 
-        # 1. İstemci sürüm karşılaştırma fonksiyonlarını doğrula
+        # 1. İstemci sürüm karşılaştırma fonksiyonlarını doğrula (0.x geliştirme serisi)
         spec = importlib.util.spec_from_file_location(
-            "kilit_ekrani_v14",
+            "kilit_ekrani_v04",
             os.path.join(PROJECT_ROOT, "client-tahta", "kilit_ekrani.py")
         )
         mod_kilit = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod_kilit)
 
-        self.assertEqual(mod_kilit.parse_version_tuple("v1.4.0"), (1, 4, 0))
-        self.assertTrue(mod_kilit.is_newer_version("v1.4.0", "v1.3.1"))
-        self.assertTrue(mod_kilit.is_newer_version("v1.10.0", "v1.4.0"))
-        self.assertFalse(mod_kilit.is_newer_version("v1.4.0", "v1.4.0"))
-        self.assertFalse(mod_kilit.is_newer_version("v1.3.1", "v1.4.0"))
+        self.assertEqual(mod_kilit.parse_version_tuple("v0.4.0"), (0, 4, 0))
+        self.assertTrue(mod_kilit.is_newer_version("v0.4.0", "v0.3.1"))
+        self.assertTrue(mod_kilit.is_newer_version("v0.5.0", "v0.4.0"))
+        self.assertTrue(mod_kilit.is_newer_version("v0.10.0", "v0.4.0"))
+        self.assertFalse(mod_kilit.is_newer_version("v0.4.0", "v0.4.0"))
+        self.assertFalse(mod_kilit.is_newer_version("v0.3.1", "v0.4.0"))
 
         # 2. Hatalı PIN ile toplu ve tekli güncelleme 401 dönmeli
         res_unauth_bulk = self.client.post("/api/bulk/update", json={"admin_pin": "0000"})
@@ -506,17 +507,17 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertEqual(res_offline.status_code, 404)
 
         # 3. İki tahta WebSocket üzerinden sürüm bilgisiyle bağlanır
-        with self.client.websocket_connect("/ws/board/etap-upd-1?name=9-A&version=v1.3.1") as ws1:
+        with self.client.websocket_connect("/ws/board/etap-upd-1?name=9-A&version=v0.3.1") as ws1:
             ws1.receive_json()  # welcome
-            with self.client.websocket_connect("/ws/board/etap-upd-2?name=10-B&version=v1.4.0") as ws2:
+            with self.client.websocket_connect("/ws/board/etap-upd-2?name=10-B&version=v0.4.0") as ws2:
                 ws2.receive_json()  # welcome
 
                 # Tahta listesinde sürüm bilgileri dönmeli
                 res_boards = self.client.get("/api/boards")
                 self.assertEqual(res_boards.status_code, 200)
                 boards_map = {b["id"]: b for b in res_boards.json()["boards"]}
-                self.assertEqual(boards_map["etap-upd-1"]["version"], "v1.3.1")
-                self.assertEqual(boards_map["etap-upd-2"]["version"], "v1.4.0")
+                self.assertEqual(boards_map["etap-upd-1"]["version"], "v0.3.1")
+                self.assertEqual(boards_map["etap-upd-2"]["version"], "v0.4.0")
 
                 # Toplu güncelleme komutu
                 res_bulk = self.client.post("/api/bulk/update", json={"admin_pin": config.ADMIN_PIN})
@@ -534,7 +535,7 @@ class TestEtapSmartLockSystem(unittest.TestCase):
                     "action": "status_update",
                     "status": "updating",
                     "detail": "%50 - Yeni sürüm kodları indiriliyor...",
-                    "version": "v1.3.1"
+                    "version": "v0.3.1"
                 })
                 res_updating = self.client.get("/api/boards")
                 upd_map = {b["id"]: b for b in res_updating.json()["boards"]}

@@ -52,7 +52,7 @@ class BoardConnectionManager:
         self.board_status: Dict[str, str] = {}
         # board_id -> sınıf/tahta görünen adı (Örn: "9-A")
         self.board_names: Dict[str, str] = {}
-        # board_id -> istemci sürümü (Örn: "v1.4.0")
+        # board_id -> istemci sürümü (Örn: "v0.4.0")
         self.board_versions: Dict[str, str] = {}
         # board_id -> canlı güncelleme/durum detay mesajı
         self.board_update_msg: Dict[str, str] = {}
