@@ -73,7 +73,7 @@
 
     <!-- SEKME 1: ÖĞRETMEN KİLİT KONTROLÜ -->
     <main id="teacherTab" class="tab-content active">
-      <div class="card">
+      <div class="card teacher-card">
         <h3>Tahta Kilit Kontrolü</h3>
 
         <!-- Kamera QR Okuma Alanı -->
@@ -84,36 +84,60 @@
           <div id="qrReader" class="qr-reader hidden"></div>
         </div>
 
-        <div class="divider"><span>veya manuel seçin</span></div>
+        <div class="divider"><span>veya sınıf seçin</span></div>
 
-        <!-- Sınıf / Tahta Seçimi -->
+        <!-- 1A: Dokunmatik Sınıf Kartları & Hızlı Arama -->
         <div class="input-group">
-          <label for="boardSelect">Sınıf / Tahta:</label>
-          <div class="select-row">
-            <select id="boardSelect" onchange="onBoardSelectChange()">
-              <option value="">-- Çevrimiçi Tahta Seçin --</option>
-            </select>
-            <button class="btn-refresh" title="Yenile" onclick="fetchOnlineBoards()">🔄</button>
+          <div class="teacher-boards-header">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label for="boardSearchInput" style="margin:0;">Çevrimiçi Sınıflar</label>
+              <span id="onlineBoardCount" class="count-pill">0</span>
+            </div>
+            <button type="button" class="btn-refresh-sm" title="Yenile" onclick="fetchOnlineBoards()">🔄 Yenile</button>
           </div>
-          <input type="text" id="customBoardInput" placeholder="Veya manuel yazın (Örn: 9-A)" class="mt-2">
+
+          <input type="search" id="boardSearchInput" class="board-search-input hidden" placeholder="🔍 Sınıf ara (Örn: 9-A, BT...)" oninput="filterTeacherBoards()">
+
+          <div id="teacherBoardGrid" class="teacher-board-grid">
+            <div class="board-grid-empty">Çevrimiçi tahtalar yükleniyor...</div>
+          </div>
+
+          <!-- 2A: Salt Okunur / Pasif Seçili Tahta Bilgi Rozeti -->
+          <div id="selectedBoardBadge" class="selected-board-badge empty">
+            <div class="selected-board-main">
+              <span id="selectedBoardTitle">👆 Yukarıdan bir sınıf seçin veya QR okutun</span>
+              <span id="selectedBoardStatus" class="selected-status-pill hidden"></span>
+            </div>
+            <div id="selectedBoardMeta" class="selected-board-meta hidden"></div>
+          </div>
         </div>
 
-        <!-- Öğretmen PIN Kodu -->
-        <div class="input-group">
+        <!-- Kompakt / Katlanabilir Öğretmen PIN Kodu -->
+        <div id="teacherPinCompactRow" class="pin-compact-row hidden">
+          <span>🔑 Öğretmen PIN Kayıtlı</span>
+          <button type="button" class="btn-pin-toggle" onclick="toggleTeacherPinEditor(true)">Değiştir</button>
+        </div>
+
+        <div id="teacherPinEditor" class="input-group">
           <label for="teacherPin">Ortak Öğretmen PIN Kodu:</label>
-          <input type="password" id="teacherPin" placeholder="Örn: 1234" maxlength="8" inputmode="numeric">
+          <div class="pin-input-row">
+            <input type="password" id="teacherPin" placeholder="Örn: 1234" maxlength="8" inputmode="numeric">
+            <button type="button" class="btn-pin-save" onclick="saveAndCollapseTeacherPin()">Tamam</button>
+          </div>
           <small class="hint">PIN kodunuz tarayıcıda güvenle hatırlanır.</small>
         </div>
 
-        <!-- Aksiyon Butonları -->
+        <!-- Aksiyon Butonları (Kilidi Aç & Kilitle yan yana, Kapat altta kompakt) -->
         <div class="action-buttons">
-          <button id="unlockBtn" class="btn btn-primary" onclick="sendUnlock()">
-            🔓 Kilidi Aç
-          </button>
-          <button id="lockBtn" class="btn btn-warning" onclick="sendLock()">
-            🔒 Dersi Bitir & Kilitle
-          </button>
-          <button id="powerBtn" class="btn btn-power" onclick="confirmPoweroff()">
+          <div class="action-buttons-pair">
+            <button id="unlockBtn" class="btn btn-primary" onclick="sendUnlock()">
+              🔓 Kilidi Aç
+            </button>
+            <button id="lockBtn" class="btn btn-warning" onclick="sendLock()">
+              🔒 Kilitle
+            </button>
+          </div>
+          <button id="powerBtn" class="btn btn-power btn-power-compact" onclick="confirmPoweroff()">
             ⏻ Tahtayı Kapat (Gücü Kes)
           </button>
         </div>

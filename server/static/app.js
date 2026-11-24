@@ -5,6 +5,8 @@
 let html5QrCode = null;
 let isScanning = false;
 let totpInterval = null;
+let cachedOnlineBoards = [];
+let selectedBoard = { id: "", name: "", status: "" };
 
 // Sayfa yüklendiğinde
 document.addEventListener("DOMContentLoaded", () => {
@@ -12,11 +14,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const savedPin = localStorage.getItem("etap_teacher_pin");
   if (savedPin) {
     document.getElementById("teacherPin").value = savedPin;
+    updateTeacherPinUI(false);
+  } else {
+    updateTeacherPinUI(true);
   }
-  const savedBoard = localStorage.getItem("etap_selected_board");
-  if (savedBoard) {
-    document.getElementById("customBoardInput").value = savedBoard;
+
+  const savedBoardId = localStorage.getItem("etap_selected_board");
+  const savedBoardName = localStorage.getItem("etap_selected_board_name");
+  if (savedBoardId) {
+    selectedBoard = {
+      id: savedBoardId,
+      name: savedBoardName || savedBoardId,
+      status: ""
+    };
   }
+  updateSelectedBoardBadge();
+
   const savedAdminPin = localStorage.getItem("etap_admin_pin");
   if (savedAdminPin) {
     if (document.getElementById("adminPin")) {
@@ -125,7 +138,6 @@ function switchAdminSubTab(subTabName) {
 // 📡 Çevrimiçi Tahtaları Listeleme (Sadece Aktif Tahtalar)
 // -------------------------------------------------------------
 async function fetchOnlineBoards() {
-  const select = document.getElementById("boardSelect");
   const adminTarget = document.getElementById("adminTarget");
 
   try {
@@ -133,26 +145,17 @@ async function fetchOnlineBoards() {
     const data = await res.json();
 
     if (data.success && data.boards) {
-      select.innerHTML = '<option value="">-- Çevrimiçi Tahta Seçin --</option>';
-      adminTarget.innerHTML = '<option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>';
+      if (adminTarget) {
+        adminTarget.innerHTML = '<option value="all">📢 TÜM OKUL (Tüm Tahtalar)</option>';
+      }
 
       // Sadece ve sadece çevrimiçi (online) tahtaları göster
       const onlineBoards = data.boards.filter(b => b.online);
+      cachedOnlineBoards = onlineBoards;
 
-      if (onlineBoards.length === 0) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "⚠️ Şu an açık tahta yok";
-        select.appendChild(opt);
-      } else {
+      if (adminTarget) {
         onlineBoards.forEach(b => {
-          const statusEmoji = b.status === "unlocked" ? "🔓" : "🔒";
           const displayName = b.name || b.id;
-          const opt = document.createElement("option");
-          opt.value = b.id;
-          opt.textContent = `${statusEmoji} ${displayName}`;
-          select.appendChild(opt);
-
           // Müdür paneli için hedef
           const adminOpt = document.createElement("option");
           adminOpt.value = b.id;
@@ -160,6 +163,9 @@ async function fetchOnlineBoards() {
           adminTarget.appendChild(adminOpt);
         });
       }
+
+      // 1A Öğretmen dokunmatik sınıf kartlarını & 2A bilgi rozetini güncelle
+      renderTeacherBoardGrid(onlineBoards);
 
       // Canlı Filo Listesini Güncelle
       renderAdminBoardFleet(onlineBoards);
@@ -180,21 +186,210 @@ async function cleanupOfflineBoards() {
   }
 }
 
-function onBoardSelectChange() {
-  const select = document.getElementById("boardSelect");
-  if (select.value) {
-    document.getElementById("customBoardInput").value = select.value;
-    localStorage.setItem("etap_selected_board", select.value);
-  }
+function selectTeacherBoard(boardId, boardName, boardStatus = "") {
+  const cleanId = (boardId || "").trim();
+  if (!cleanId) return;
+
+  const cleanName = (boardName || cleanId).trim();
+  selectedBoard = {
+    id: cleanId,
+    name: cleanName,
+    status: boardStatus || ""
+  };
+
+  localStorage.setItem("etap_selected_board", cleanId);
+  localStorage.setItem("etap_selected_board_name", cleanName);
+
+  updateSelectedBoardBadge();
+
+  document.querySelectorAll("#teacherBoardGrid .board-chip").forEach(chip => {
+    chip.classList.toggle("selected", chip.dataset.boardId === cleanId);
+  });
 }
 
 // Seçili Tahta ID'sini Al
 function getSelectedBoardId() {
-  const customInput = document.getElementById("customBoardInput");
-  const targetId = customInput.dataset.targetId;
-  const custom = customInput.value.trim();
-  const select = document.getElementById("boardSelect").value;
-  return targetId || custom || select;
+  return (selectedBoard.id || "").trim();
+}
+
+function getSelectedBoardDisplayName() {
+  return (selectedBoard.name || selectedBoard.id || "").trim();
+}
+
+function updateSelectedBoardBadge() {
+  const badge = document.getElementById("selectedBoardBadge");
+  const titleEl = document.getElementById("selectedBoardTitle");
+  const statusEl = document.getElementById("selectedBoardStatus");
+  const metaEl = document.getElementById("selectedBoardMeta");
+  if (!badge || !titleEl || !statusEl || !metaEl) return;
+
+  if (!selectedBoard.id) {
+    badge.classList.add("empty");
+    titleEl.textContent = "👆 Yukarıdan bir sınıf seçin veya QR okutun";
+    statusEl.className = "selected-status-pill hidden";
+    statusEl.textContent = "";
+    metaEl.classList.add("hidden");
+    metaEl.textContent = "";
+    return;
+  }
+
+  badge.classList.remove("empty");
+  titleEl.textContent = `🖥️ Seçili: ${getSelectedBoardDisplayName()}`;
+
+  const statusMap = {
+    unlocked: { text: "🟢 Açık", cls: "unlocked" },
+    locked: { text: "🔒 Kilitli", cls: "locked" },
+    updating: { text: "🔄 Güncelleniyor", cls: "updating" },
+    offline: { text: "⚪ Çevrimdışı", cls: "offline" }
+  };
+  const info = statusMap[selectedBoard.status];
+  if (info) {
+    statusEl.textContent = info.text;
+    statusEl.className = `selected-status-pill ${info.cls}`;
+  } else {
+    statusEl.className = "selected-status-pill hidden";
+    statusEl.textContent = "";
+  }
+
+  metaEl.textContent = `Kimlik: ${selectedBoard.id}`;
+  metaEl.classList.remove("hidden");
+}
+
+function renderTeacherBoardGrid(boards) {
+  const grid = document.getElementById("teacherBoardGrid");
+  const countEl = document.getElementById("onlineBoardCount");
+  const searchInput = document.getElementById("boardSearchInput");
+  if (!grid) return;
+
+  const list = Array.isArray(boards) ? boards : [];
+  if (countEl) {
+    countEl.textContent = String(list.length);
+  }
+
+  if (searchInput) {
+    if (list.length > 6) {
+      searchInput.classList.remove("hidden");
+    } else {
+      searchInput.classList.add("hidden");
+      searchInput.value = "";
+    }
+  }
+
+  // Seçili tahta canlı listedeyse adını/durumunu tazele; tek tahta varsa otomatik seç
+  if (selectedBoard.id) {
+    const liveMatch = list.find(
+      b => b.id === selectedBoard.id || (b.name && b.name === selectedBoard.id)
+    );
+    if (liveMatch) {
+      selectedBoard.id = liveMatch.id;
+      selectedBoard.name = liveMatch.name || liveMatch.id;
+      selectedBoard.status = liveMatch.status || "locked";
+      localStorage.setItem("etap_selected_board", selectedBoard.id);
+      localStorage.setItem("etap_selected_board_name", selectedBoard.name);
+    } else {
+      selectedBoard.status = "offline";
+    }
+  } else if (list.length === 1) {
+    const only = list[0];
+    selectedBoard = {
+      id: only.id,
+      name: only.name || only.id,
+      status: only.status || "locked"
+    };
+    localStorage.setItem("etap_selected_board", selectedBoard.id);
+    localStorage.setItem("etap_selected_board_name", selectedBoard.name);
+  }
+  updateSelectedBoardBadge();
+
+  if (list.length === 0) {
+    grid.innerHTML = '<div class="board-grid-empty">⚠️ Şu an çevrimiçi tahta bulunmuyor</div>';
+    return;
+  }
+
+  const query = (searchInput && !searchInput.classList.contains("hidden") ? searchInput.value : "").trim().toLocaleLowerCase("tr-TR");
+  const filtered = query
+    ? list.filter(b => {
+        const name = (b.name || "").toLocaleLowerCase("tr-TR");
+        const id = (b.id || "").toLocaleLowerCase("tr-TR");
+        return name.includes(query) || id.includes(query);
+      })
+    : list;
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="board-grid-empty">🔍 Aramanızla eşleşen sınıf bulunamadı</div>';
+    return;
+  }
+
+  grid.innerHTML = "";
+  filtered.forEach(b => {
+    const displayName = b.name || b.id;
+    const status = b.status || "locked";
+    const statusEmoji = status === "unlocked" ? "🟢" : (status === "updating" ? "🔄" : "🔒");
+
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.dataset.boardId = b.id;
+    chip.className = `board-chip status-${status}${selectedBoard.id === b.id ? " selected" : ""}`;
+
+    const iconSpan = document.createElement("span");
+    iconSpan.className = "board-chip-icon";
+    iconSpan.textContent = statusEmoji;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "board-chip-name";
+    nameSpan.textContent = displayName;
+
+    chip.appendChild(iconSpan);
+    chip.appendChild(nameSpan);
+    chip.addEventListener("click", () => {
+      selectTeacherBoard(b.id, displayName, status);
+    });
+    grid.appendChild(chip);
+  });
+}
+
+function filterTeacherBoards() {
+  renderTeacherBoardGrid(cachedOnlineBoards);
+}
+
+function updateTeacherPinUI(showEditor) {
+  const compactRow = document.getElementById("teacherPinCompactRow");
+  const editor = document.getElementById("teacherPinEditor");
+  const pinInput = document.getElementById("teacherPin");
+  if (!compactRow || !editor || !pinInput) return;
+
+  const hasPin = pinInput.value.trim().length > 0;
+  if (showEditor || !hasPin) {
+    compactRow.classList.add("hidden");
+    editor.classList.remove("hidden");
+  } else {
+    editor.classList.add("hidden");
+    compactRow.classList.remove("hidden");
+  }
+}
+
+function toggleTeacherPinEditor(showEditor) {
+  updateTeacherPinUI(showEditor);
+  if (showEditor) {
+    const pinInput = document.getElementById("teacherPin");
+    if (pinInput) {
+      pinInput.focus();
+      pinInput.select();
+    }
+  }
+}
+
+function saveAndCollapseTeacherPin() {
+  const pinInput = document.getElementById("teacherPin");
+  const val = (pinInput?.value || "").trim();
+  if (!val) {
+    showToast("Lütfen geçerli bir Öğretmen PIN kodu girin!", "error");
+    if (pinInput) pinInput.focus();
+    return;
+  }
+  localStorage.setItem("etap_teacher_pin", val);
+  updateTeacherPinUI(false);
+  showToast("Öğretmen PIN kodu kaydedildi.", "success");
 }
 
 // -------------------------------------------------------------
@@ -261,21 +456,13 @@ function onQrCodeSuccess(decodedText) {
       const boardId = url.searchParams.get("board");
       const boardName = url.searchParams.get("name") || boardId;
       if (boardId) {
-        const input = document.getElementById("customBoardInput");
-        input.value = boardName;
-        input.dataset.targetId = boardId;
-        localStorage.setItem("etap_selected_board", boardName);
+        selectTeacherBoard(boardId, boardName, "");
       }
     } else {
-      const input = document.getElementById("customBoardInput");
-      input.value = decodedText;
-      delete input.dataset.targetId;
-      localStorage.setItem("etap_selected_board", decodedText);
+      selectTeacherBoard(decodedText, decodedText, "");
     }
   } catch (e) {
-    const input = document.getElementById("customBoardInput");
-    input.value = decodedText;
-    delete input.dataset.targetId;
+    selectTeacherBoard(decodedText, decodedText, "");
   }
 
   showToast("Tahta algılandı! Açılıyor...", "success");
@@ -296,12 +483,14 @@ async function sendUnlock() {
     return;
   }
   if (!pin) {
+    toggleTeacherPinEditor(true);
     showToast("Lütfen Ortak Öğretmen PIN Kodunu girin!", "error");
     return;
   }
 
   localStorage.setItem("etap_teacher_pin", pin);
   localStorage.setItem("etap_selected_board", boardId);
+  localStorage.setItem("etap_selected_board_name", getSelectedBoardDisplayName());
 
   const btn = document.getElementById("unlockBtn");
   btn.disabled = true;
@@ -317,6 +506,7 @@ async function sendUnlock() {
 
     if (res.ok && data.success) {
       showToast(data.message, "success");
+      updateTeacherPinUI(false);
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
     } else {
       showToast(data.detail || "Kilit açılamadı!", "error");
@@ -334,10 +524,17 @@ async function sendLock() {
   const boardId = getSelectedBoardId();
   const pin = document.getElementById("teacherPin").value.trim();
 
-  if (!boardId || !pin) {
-    showToast("Lütfen tahta ve PIN kodunu girin!", "error");
+  if (!boardId) {
+    showToast("Lütfen bir sınıf/tahta seçin!", "error");
     return;
   }
+  if (!pin) {
+    toggleTeacherPinEditor(true);
+    showToast("Lütfen Ortak Öğretmen PIN Kodunu girin!", "error");
+    return;
+  }
+
+  localStorage.setItem("etap_teacher_pin", pin);
 
   const btn = document.getElementById("lockBtn");
   btn.disabled = true;
@@ -360,7 +557,7 @@ async function sendLock() {
     showToast("Sunucuya ulaşılamadı!", "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "🔒 Dersi Bitir & Kilitle";
+    btn.textContent = "🔒 Kilitle";
     fetchOnlineBoards();
   }
 }
@@ -377,13 +574,14 @@ function confirmPoweroff() {
     return;
   }
   if (!pin) {
+    toggleTeacherPinEditor(true);
     showToast("Lütfen yetkili PIN kodunuzu girin!", "error");
     return;
   }
 
   const modal = document.getElementById("powerModal");
   const modalDesc = document.getElementById("modalDesc");
-  const displayName = document.getElementById("customBoardInput").value || boardId;
+  const displayName = getSelectedBoardDisplayName();
 
   modalDesc.textContent = `'${displayName}' akıllı tahtası tamamen kapatılacaktır. Tahta üzerindeki tüm pencereler kapanacaktır. Devam etmek istiyor musunuz?`;
   modal.classList.remove("hidden");
