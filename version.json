@@ -1,11 +1,12 @@
 {
-  "version": "v0.7.0",
+  "version": "v0.8.0",
   "app_name": "Tahta Kilit",
   "release_date": "2026-11-27",
-  "description": "İdare Paneli Şifre Giriş Kapısı, İdareden Öğretmen/İdare PIN Değiştirme (Canlı Tahta Eşitleme) ve Kalıcı Okul/Kurum Adı Koruması.",
+  "description": "Kapsamlı Güvenlik Sertleştirme: SHA-256 Şifre Özetleme, Kaba Kuvvet Hız Sınırı, İmzalı İdare Oturum Token'ı, WebSocket Tahta Anahtarı ve TOTP Sekmesi Erişim Koruması.",
   "changelog": [
-    "Mobil web arayüzünde 'İdare' sekmesine şifre giriş ekranı (POST /api/admin/verify) ve 'Çıkış' butonu eklendi; İdare PIN tarayıcı önbelleğinde açık bırakılmaz.",
-    "İdare → Toplu Yönetim & Duyuru altına '🔐 PIN & Güvenlik Ayarları' kartı (POST /api/settings/pins) eklendi; Öğretmen PIN ve İdare PIN buradan değiştirilebilir ve yeni Öğretmen PIN bağlı tahtalara canlı senkronize edilir.",
-    "Tahta istemcisi ve sunucu el sıkışmasında (self-healing school_name + multi-config load_config) kurum adının client açılışında veya Render yeniden başlangıcında varsayılan MEB adına sıfırlanması kalıcı olarak düzeltildi."
+    "Sunucudaki settings.json ve tahtadaki config.ini dosyalarında tüm PIN ve yönetici şifreleri düz metin yerine tuzlanmış SHA-256 hash (sha256$...) ile saklanmaya ve sabit zamanlı (hmac.compare_digest) doğrulanmaya başlandı.",
+    "Sunucuya IP bazlı Kaba Kuvvet Koruması (RateLimiter — 5 hatalı denemede 5 dk engel, HTTP 429) eklendi.",
+    "İdare girişi 30 dakikalık imzalı HMAC oturum token'ı (X-Admin-Token) ve /api/admin/logout sunucu taraflı oturum iptaline geçirildi; /api/boards/cleanup yetki koruması altına alındı.",
+    "İsteğe bağlı WebSocket Tahta Kimlik Anahtarı (BOARD_API_KEY / tahta_anahtar), kriptografik dosya indirme kimliği (secrets.token_urlsafe(24)), HTTP güvenlik başlıkları (X-Frame-Options, X-Content-Type-Options) ve Öğretmen TOTP sekmesi erişim kapısı (/api/teacher/verify) eklendi."
   ]
 }

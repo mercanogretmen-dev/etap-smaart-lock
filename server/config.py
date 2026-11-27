@@ -14,3 +14,9 @@ QR_VALIDITY_SECONDS = int(os.getenv("QR_VALIDITY_SECONDS", "45"))
 
 # Merkezi Okul / Kurum Adı (İsteğe bağlı ortam değişkeni sabitlemesi)
 SCHOOL_NAME = os.getenv("SCHOOL_NAME", "").strip()
+
+# Akıllı Tahta WebSocket Kimlik Doğrulama Anahtarı (İsteğe bağlı — doluysa tahtalarda aynı değer gerekir)
+BOARD_API_KEY = os.getenv("BOARD_API_KEY", "").strip()
+
+# İzin Verilen CORS Kökenleri (Virgülle ayrılmış URL'ler veya '*')
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").strip()

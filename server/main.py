@@ -1,14 +1,18 @@
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
 import re
+import secrets
 import sys
 import time
 import uuid
+from collections import defaultdict
 from urllib.parse import urlparse
 from typing import Dict, List, Optional
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, status, UploadFile, File, Form
+from fastapi import Body, FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -53,12 +57,14 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ETAP-Server")
 
-app = FastAPI(title="ETAP Akıllı Kilit & Mobil Yönetim Sistemi", version="1.0.0")
+app = FastAPI(title="ETAP Akıllı Kilit & Mobil Yönetim Sistemi", version="0.8.0")
 
-# CORS izinleri (Tüm mobil cihazlar ve yerel ağ için)
+# CORS izinleri (ALLOWED_ORIGINS ortam değişkeni ile sınırlandırılabilir)
+_raw_origins = getattr(config, "ALLOWED_ORIGINS", "*").strip()
+_cors_origins = ["*"] if (not _raw_origins or _raw_origins == "*") else [o.strip() for o in _raw_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,13 +72,94 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def add_no_cache_headers(request: Request, call_next):
-    """Mobil PWA/tarayıcılarda eski JS/CSS ile yeni HTML'in karışmasını önler."""
+async def security_and_cache_headers_middleware(request: Request, call_next):
+    """HTTP güvenlik başlıklarını ekler ve mobil arayüzde önbellek çakışmasını önler."""
     response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=()"
+
     path = request.url.path or "/"
     if path == "/" or path.endswith((".html", ".js", ".css")):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
+
+
+# -------------------------------------------------------------
+# 🛡️ Kriptografik Özetleme, Hız Sınırı & Oturum Token Güvenliği
+# -------------------------------------------------------------
+def hash_secret(plain: str) -> str:
+    """PIN / şifreyi sunucu tuzuna (SECRET_SALT) bağlı tek yönlü SHA-256 özete çevirir."""
+    digest = hashlib.sha256(f"{config.SECRET_SALT}:{plain}".encode("utf-8")).hexdigest()
+    return f"sha256${digest}"
+
+
+def verify_secret(plain: str, expected: str) -> bool:
+    """Sabit zamanlı (timing-safe) olarak düz metin veya sha256$ özetle şifreyi doğrular."""
+    if not expected:
+        return False
+    if expected.startswith("sha256$"):
+        return hmac.compare_digest(hash_secret(plain), expected)
+    return hmac.compare_digest(plain, expected)
+
+
+class RateLimiter:
+    """IP ve kapsama (admin / teacher) göre kaba kuvvet saldırılarını engeller."""
+    MAX_ATTEMPTS = 5
+    WINDOW_SECONDS = 300
+    LOCKOUT_SECONDS = 300
+
+    def __init__(self):
+        self.failures: Dict[tuple, List[float]] = defaultdict(list)
+        self.blocked_until: Dict[tuple, float] = {}
+
+    def reset(self):
+        self.failures.clear()
+        self.blocked_until.clear()
+
+    def is_blocked(self, ip: str, scope: str) -> tuple:
+        key = (ip, scope)
+        until = self.blocked_until.get(key, 0.0)
+        now = time.time()
+        if until > now:
+            return True, max(1, int(until - now))
+        if key in self.blocked_until:
+            del self.blocked_until[key]
+        return False, 0
+
+    def record_failure(self, ip: str, scope: str) -> int:
+        key = (ip, scope)
+        now = time.time()
+        cutoff = now - self.WINDOW_SECONDS
+        recent = [t for t in self.failures[key] if t > cutoff]
+        recent.append(now)
+        self.failures[key] = recent
+        if len(recent) >= self.MAX_ATTEMPTS:
+            self.blocked_until[key] = now + self.LOCKOUT_SECONDS
+            self.failures[key] = []
+            return self.LOCKOUT_SECONDS
+        return 0
+
+    def record_success(self, ip: str, scope: str):
+        key = (ip, scope)
+        self.failures.pop(key, None)
+        self.blocked_until.pop(key, None)
+
+
+rate_limiter = RateLimiter()
+revoked_admin_tokens: Dict[str, float] = {}
+
+
+def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "").strip()
+    if forwarded:
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
 # -------------------------------------------------------------
 # 📡 Canlı Tahta WebSocket Yöneticisi (Connection Manager)
@@ -96,6 +183,8 @@ class BoardConnectionManager:
         self.school_name_custom: bool = False
         self.teacher_pin_custom: bool = False
         self.admin_pin_custom: bool = False
+        self.teacher_pin_hash: str = ""
+        self.admin_pin_hash: str = ""
         self.load_settings()
         # Bekleyen ekran görüntüsü yanıtları (request_id -> asyncio.Future)
         self.pending_screenshots: Dict[str, asyncio.Future] = {}
@@ -155,31 +244,68 @@ class BoardConnectionManager:
                 self.school_name = DEFAULT_SCHOOL_NAME
                 self.school_name_custom = False
 
+        saved_teacher_hash = str(data.get("teacher_pin_hash", "")).strip()
         saved_teacher_pin = str(data.get("teacher_pin", "")).strip()
-        if saved_teacher_pin:
+        if saved_teacher_hash:
+            self.teacher_pin_hash = saved_teacher_hash
+            self.teacher_pin_custom = bool(data.get("teacher_pin_custom", True))
+        elif saved_teacher_pin:
             config.TEACHER_PIN = saved_teacher_pin
+            self.teacher_pin_hash = hash_secret(saved_teacher_pin)
             self.teacher_pin_custom = bool(data.get("teacher_pin_custom", True))
         else:
+            self.teacher_pin_hash = ""
             self.teacher_pin_custom = False
 
+        saved_admin_hash = str(data.get("admin_pin_hash", "")).strip()
         saved_admin_pin = str(data.get("admin_pin", "")).strip()
-        if saved_admin_pin:
+        if saved_admin_hash:
+            self.admin_pin_hash = saved_admin_hash
+            self.admin_pin_custom = bool(data.get("admin_pin_custom", True))
+        elif saved_admin_pin:
             config.ADMIN_PIN = saved_admin_pin
+            self.admin_pin_hash = hash_secret(saved_admin_pin)
             self.admin_pin_custom = bool(data.get("admin_pin_custom", True))
         else:
+            self.admin_pin_hash = ""
             self.admin_pin_custom = False
 
+    def check_teacher_pin(self, pin: str) -> bool:
+        clean = (pin or "").strip()
+        if not clean:
+            return False
+        if self.teacher_pin_custom and self.teacher_pin_hash:
+            return verify_secret(clean, self.teacher_pin_hash)
+        return verify_secret(clean, config.TEACHER_PIN)
+
+    def check_admin_pin(self, pin: str) -> bool:
+        clean = (pin or "").strip()
+        if not clean:
+            return False
+        if self.admin_pin_custom and self.admin_pin_hash:
+            return verify_secret(clean, self.admin_pin_hash)
+        return verify_secret(clean, config.ADMIN_PIN)
+
+    def get_admin_key_material(self) -> str:
+        if self.admin_pin_custom and self.admin_pin_hash:
+            return self.admin_pin_hash
+        return hash_secret(config.ADMIN_PIN)
+
     def save_settings(self):
-        """Okul adı ve özelleştirilmiş PIN ayarlarını settings.json içine kalıcı kaydeder."""
+        """Okul adı ve özelleştirilmiş PIN özetlerini settings.json içine kalıcı kaydeder (düz metin yazmaz)."""
         payload = {
             "school_name": self.school_name,
             "school_name_custom": self.school_name_custom,
         }
         if self.teacher_pin_custom:
-            payload["teacher_pin"] = config.TEACHER_PIN
+            if not self.teacher_pin_hash:
+                self.teacher_pin_hash = hash_secret(config.TEACHER_PIN)
+            payload["teacher_pin_hash"] = self.teacher_pin_hash
             payload["teacher_pin_custom"] = True
         if self.admin_pin_custom:
-            payload["admin_pin"] = config.ADMIN_PIN
+            if not self.admin_pin_hash:
+                self.admin_pin_hash = hash_secret(config.ADMIN_PIN)
+            payload["admin_pin_hash"] = self.admin_pin_hash
             payload["admin_pin_custom"] = True
 
         try:
@@ -298,6 +424,160 @@ class BoardConnectionManager:
 
 manager = BoardConnectionManager()
 
+
+def _sign_admin_token_payload(payload_str: str) -> str:
+    key = f"{config.SECRET_SALT}:{manager.get_admin_key_material()}".encode("utf-8")
+    return hmac.new(key, payload_str.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def create_admin_session_token(ttl_seconds: int = 1800) -> str:
+    """İdare paneli için imzalı geçici oturum bileti (varsayılan 30 dk) üretir."""
+    exp_ts = int(time.time()) + ttl_seconds
+    nonce = secrets.token_urlsafe(12)
+    payload_str = f"{exp_ts}.{nonce}"
+    sig = _sign_admin_token_payload(payload_str)
+    return f"{payload_str}.{sig}"
+
+
+def _cleanup_revoked_tokens():
+    now = time.time()
+    expired = [tok for tok, exp in list(revoked_admin_tokens.items()) if exp <= now]
+    for tok in expired:
+        revoked_admin_tokens.pop(tok, None)
+
+
+def extract_admin_token(request: Request) -> str:
+    tok = (request.headers.get("x-admin-token") or "").strip()
+    if tok:
+        return tok
+    auth_hdr = (request.headers.get("authorization") or "").strip()
+    if auth_hdr.lower().startswith("bearer "):
+        return auth_hdr[7:].strip()
+    return ""
+
+
+def verify_admin_session_token(token: str) -> bool:
+    clean = (token or "").strip()
+    if not clean:
+        return False
+    _cleanup_revoked_tokens()
+    if clean in revoked_admin_tokens:
+        return False
+    parts = clean.split(".")
+    if len(parts) != 3:
+        return False
+    exp_str, nonce, sig = parts
+    try:
+        exp_ts = int(exp_str)
+    except ValueError:
+        return False
+    if exp_ts < time.time() or not nonce:
+        return False
+    expected_sig = _sign_admin_token_payload(f"{exp_str}.{nonce}")
+    return hmac.compare_digest(sig, expected_sig)
+
+
+def revoke_admin_session_token(token: str):
+    clean = (token or "").strip()
+    if not clean:
+        return
+    _cleanup_revoked_tokens()
+    exp_ts = time.time() + 1800
+    parts = clean.split(".")
+    if len(parts) == 3:
+        try:
+            exp_ts = max(exp_ts, int(parts[0]))
+        except ValueError:
+            pass
+    revoked_admin_tokens[clean] = exp_ts
+
+
+def _raise_if_blocked(ip: str, scope: str):
+    blocked, retry_sec = rate_limiter.is_blocked(ip, scope)
+    if blocked:
+        mins = max(1, (retry_sec + 59) // 60)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Çok fazla hatalı deneme! Güvenlik nedeniyle {mins} dakika bekleyiniz ({retry_sec} sn).",
+            headers={"Retry-After": str(retry_sec)},
+        )
+
+
+def require_teacher_auth(request: Request, pin: str):
+    ip = get_client_ip(request)
+    _raise_if_blocked(ip, "teacher")
+    if manager.check_teacher_pin(pin):
+        rate_limiter.record_success(ip, "teacher")
+        return
+    lock_sec = rate_limiter.record_failure(ip, "teacher")
+    if lock_sec:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok fazla hatalı öğretmen PIN denemesi! 5 dakika geçici engel uygulandı.",
+            headers={"Retry-After": str(lock_sec)},
+        )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Hatalı Öğretmen PIN Kodu!"
+    )
+
+
+def require_admin_auth(request: Request, admin_pin: Optional[str] = None):
+    token = extract_admin_token(request)
+    if token and verify_admin_session_token(token):
+        return
+
+    ip = get_client_ip(request)
+    _raise_if_blocked(ip, "admin")
+    if admin_pin and manager.check_admin_pin(admin_pin):
+        rate_limiter.record_success(ip, "admin")
+        return
+
+    if token and not admin_pin:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="İdare oturumu geçersiz veya süresi dolmuş! Lütfen tekrar giriş yapın."
+        )
+
+    lock_sec = rate_limiter.record_failure(ip, "admin")
+    if lock_sec:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok fazla hatalı İdare PIN denemesi! 5 dakika geçici engel uygulandı.",
+            headers={"Retry-After": str(lock_sec)},
+        )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Hatalı Müdür/İdare Giriş Kodu!"
+    )
+
+
+def require_poweroff_auth(request: Request, pin: Optional[str] = None):
+    token = extract_admin_token(request)
+    if token and verify_admin_session_token(token):
+        return
+
+    ip = get_client_ip(request)
+    _raise_if_blocked(ip, "teacher")
+    _raise_if_blocked(ip, "admin")
+    if pin and (manager.check_teacher_pin(pin) or manager.check_admin_pin(pin)):
+        rate_limiter.record_success(ip, "teacher")
+        rate_limiter.record_success(ip, "admin")
+        return
+
+    lock_sec = rate_limiter.record_failure(ip, "teacher")
+    if lock_sec:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Çok fazla hatalı PIN denemesi! 5 dakika geçici engel uygulandı.",
+            headers={"Retry-After": str(lock_sec)},
+        )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Hatalı PIN Kodu! Tahtayı kapatmak için yetkili şifresi gereklidir."
+    )
+
+
 # -------------------------------------------------------------
 # 📩 API İstek Modelleri
 # -------------------------------------------------------------
@@ -312,10 +592,13 @@ class LockRequest(BaseModel):
 
 class PoweroffRequest(BaseModel):
     board_id: str
+    pin: Optional[str] = ""
+
+class TeacherVerifyRequest(BaseModel):
     pin: str
 
 class BroadcastRequest(BaseModel):
-    admin_pin: str
+    admin_pin: Optional[str] = ""
     target: str  # "all" veya belirli bir "board_id" (örn: "9-A")
     message: str
     duration_sec: int = 120  # Ekranda kaç saniye aksın
@@ -323,38 +606,38 @@ class BroadcastRequest(BaseModel):
     link_label: Optional[str] = None
 
 class BroadcastClearRequest(BaseModel):
-    admin_pin: str
+    admin_pin: Optional[str] = ""
     target: str = "all"
 
 class SchoolSettingsRequest(BaseModel):
-    admin_pin: str
+    admin_pin: Optional[str] = ""
     school_name: str
 
 class ScreenshotRequest(BaseModel):
     board_id: str
-    admin_pin: str
+    admin_pin: Optional[str] = ""
     width: int = 960
     quality: int = 72
     last_hash: Optional[str] = None
 
 class ThumbnailsRequest(BaseModel):
-    admin_pin: str
+    admin_pin: Optional[str] = ""
     width: int = 320
     quality: int = 40
     hashes: Dict[str, str] = {}
 
 class BulkActionRequest(BaseModel):
-    admin_pin: str
+    admin_pin: Optional[str] = ""
 
 class BoardUpdateRequest(BaseModel):
     board_id: str
-    admin_pin: str
+    admin_pin: Optional[str] = ""
 
 class AdminVerifyRequest(BaseModel):
     admin_pin: str
 
 class PinUpdateRequest(BaseModel):
-    current_admin_pin: str
+    current_admin_pin: Optional[str] = ""
     new_teacher_pin: Optional[str] = None
     new_admin_pin: Optional[str] = None
 
@@ -363,6 +646,18 @@ class PinUpdateRequest(BaseModel):
 # -------------------------------------------------------------
 @app.websocket("/ws/board/{board_id}")
 async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Optional[str] = None):
+    required_key = getattr(config, "BOARD_API_KEY", "").strip()
+    if required_key:
+        provided_key = (
+            websocket.query_params.get("key")
+            or websocket.headers.get("x-board-key")
+            or ""
+        ).strip()
+        if not provided_key or not hmac.compare_digest(provided_key, required_key):
+            logger.warning(f"🚫 Yetkisiz WebSocket tahta bağlantı denemesi reddedildi: [{board_id}]")
+            await websocket.close(code=1008, reason="Yetkisiz tahta anahtarı")
+            return
+
     query_name = websocket.query_params.get("name")
     query_version = websocket.query_params.get("version")
     query_school = (websocket.query_params.get("school_name") or "").strip()
@@ -379,6 +674,12 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Op
             manager.save_school_name(query_school, custom=True)
             logger.info(f"🏫 Kurum adı tahta bildiriminden geri yüklendi: '{query_school}'")
 
+        sync_teacher_pin = (
+            config.TEACHER_PIN
+            if (manager.teacher_pin_custom and manager.check_teacher_pin(config.TEACHER_PIN))
+            else ""
+        )
+
         # Tahtaya ilk bağlantı onayı ve merkezi okul/PIN durumunu gönder
         await websocket.send_text(json.dumps({
             "action": "welcome",
@@ -386,7 +687,7 @@ async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Op
             "name": manager.board_names.get(board_id, initial_name),
             "school_name": manager.school_name,
             "school_name_custom": manager.school_name_custom,
-            "teacher_pin": config.TEACHER_PIN,
+            "teacher_pin": sync_teacher_pin,
             "teacher_pin_custom": manager.teacher_pin_custom,
             "message": f"Bağlantı kuruldu: {manager.board_names.get(board_id, initial_name)}"
         }))
@@ -451,23 +752,28 @@ async def list_boards(online_only: bool = True):
     }
 
 @app.post("/api/boards/cleanup")
-def cleanup_boards():
-    """Çevrimdışı kalan eski/hayalet tahta kayıtlarını temizler"""
+async def cleanup_boards(request: Request, req: Optional[BulkActionRequest] = Body(default=None)):
+    """Çevrimdışı kalan eski/hayalet tahta kayıtlarını temizler (Yalnızca İdare yetkisi)"""
+    require_admin_auth(request, req.admin_pin if req else "")
     count = manager.cleanup_offline()
     return {
         "success": True,
         "message": f"{count} adet çevrimdışı tahta kaydı temizlendi."
     }
 
+@app.post("/api/teacher/verify")
+async def verify_teacher_pin(req: TeacherVerifyRequest, request: Request):
+    """Öğretmen PIN doğrulaması (Çevrimdışı TOTP sekmesi erişim kontrolü için)"""
+    require_teacher_auth(request, req.pin)
+    return {
+        "success": True,
+        "message": "Öğretmen doğrulandı."
+    }
+
 @app.post("/api/unlock")
-async def unlock_board(req: UnlockRequest):
+async def unlock_board(req: UnlockRequest, request: Request):
     """Öğretmen telefonundan kilidi açma isteği"""
-    # 1. Ortak Öğretmen PIN'ini doğrula
-    if req.pin != config.TEACHER_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Öğretmen PIN Kodu!"
-        )
+    require_teacher_auth(request, req.pin)
 
     # 2. Tahtayı bul (cihaz ID'si veya sınıf adıyla)
     target_id = manager.find_board(req.board_id)
@@ -498,13 +804,9 @@ async def unlock_board(req: UnlockRequest):
         )
 
 @app.post("/api/lock")
-async def lock_board(req: LockRequest):
+async def lock_board(req: LockRequest, request: Request):
     """Öğretmen telefonundan dersi bitirip tahtayı kilitleme isteği"""
-    if req.pin != config.TEACHER_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Öğretmen PIN Kodu!"
-        )
+    require_teacher_auth(request, req.pin)
 
     target_id = manager.find_board(req.board_id)
     if not target_id or not manager.is_connected(target_id):
@@ -533,13 +835,9 @@ async def lock_board(req: LockRequest):
         )
 
 @app.post("/api/poweroff")
-async def poweroff_board(req: PoweroffRequest):
+async def poweroff_board(req: PoweroffRequest, request: Request):
     """Öğretmen veya İdare tarafından tahtayı tamamen kapatma (shutdown) emri"""
-    if req.pin != config.TEACHER_PIN and req.pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı PIN Kodu! Tahtayı kapatmak için yetkili şifresi gereklidir."
-        )
+    require_poweroff_auth(request, req.pin)
 
     target_id = manager.find_board(req.board_id)
     if not target_id or not manager.is_connected(target_id):
@@ -567,14 +865,9 @@ async def poweroff_board(req: PoweroffRequest):
         )
 
 @app.post("/api/broadcast")
-async def broadcast_announcement(req: BroadcastRequest):
+async def broadcast_announcement(req: BroadcastRequest, request: Request):
     """Müdür / İdare tarafından mavi ışıklı kayan bant duyurusu ve web bağlantısı gönderme"""
-    # 1. Müdür PIN'ini doğrula
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     if not req.message.strip():
         raise HTTPException(
@@ -633,13 +926,9 @@ async def broadcast_announcement(req: BroadcastRequest):
             )
 
 @app.post("/api/broadcast/clear")
-async def clear_broadcast_announcement(req: BroadcastClearRequest):
+async def clear_broadcast_announcement(req: BroadcastClearRequest, request: Request):
     """Müdür / İdare tarafından tahtalardaki aktif duyuruları temizleme"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     payload = {
         "action": "clear_announcement",
@@ -682,13 +971,9 @@ async def get_school_settings():
     }
 
 @app.post("/api/settings/school")
-async def update_school_settings(req: SchoolSettingsRequest):
+async def update_school_settings(req: SchoolSettingsRequest, request: Request):
     """Müdür tarafından kurum adını değiştirir ve tüm bağlı tahtalara anında yayınlar"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     name = req.school_name.strip()
     if not name:
@@ -712,27 +997,47 @@ async def update_school_settings(req: SchoolSettingsRequest):
 
 
 @app.post("/api/admin/verify")
-async def verify_admin_login(req: AdminVerifyRequest):
-    """Mobil İdare Paneli giriş şifresini doğrular"""
-    if (req.admin_pin or "").strip() != config.ADMIN_PIN:
+async def verify_admin_login(req: AdminVerifyRequest, request: Request):
+    """Mobil İdare Paneli giriş şifresini doğrular ve geçici imzalı oturum bileti verir"""
+    ip = get_client_ip(request)
+    _raise_if_blocked(ip, "admin")
+    if not manager.check_admin_pin(req.admin_pin):
+        lock_sec = rate_limiter.record_failure(ip, "admin")
+        if lock_sec:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Çok fazla hatalı İdare PIN denemesi! 5 dakika geçici engel uygulandı.",
+                headers={"Retry-After": str(lock_sec)},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Hatalı Müdür/İdare Giriş Kodu!"
         )
+    rate_limiter.record_success(ip, "admin")
     return {
         "success": True,
+        "token": create_admin_session_token(ttl_seconds=1800),
+        "expires_in": 1800,
         "message": "İdare girişi doğrulandı."
     }
 
 
+@app.post("/api/admin/logout")
+async def logout_admin_session(request: Request):
+    """Mevcut idare oturum biletini sunucuda iptal eder"""
+    token = extract_admin_token(request)
+    if token:
+        revoke_admin_session_token(token)
+    return {
+        "success": True,
+        "message": "İdare oturumu güvenli şekilde sonlandırıldı."
+    }
+
+
 @app.post("/api/settings/pins")
-async def update_security_pins(req: PinUpdateRequest):
+async def update_security_pins(req: PinUpdateRequest, request: Request):
     """İdare panelinden Öğretmen PIN ve/veya İdare PIN kodlarını günceller"""
-    if (req.current_admin_pin or "").strip() != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.current_admin_pin)
 
     new_teacher = (req.new_teacher_pin or "").strip()
     new_admin = (req.new_admin_pin or "").strip()
@@ -760,6 +1065,7 @@ async def update_security_pins(req: PinUpdateRequest):
 
     if new_teacher:
         config.TEACHER_PIN = new_teacher
+        manager.teacher_pin_hash = hash_secret(new_teacher)
         manager.teacher_pin_custom = True
         teacher_updated = True
         boards_synced = await manager.broadcast_all({
@@ -770,6 +1076,7 @@ async def update_security_pins(req: PinUpdateRequest):
 
     if new_admin:
         config.ADMIN_PIN = new_admin
+        manager.admin_pin_hash = hash_secret(new_admin)
         manager.admin_pin_custom = True
         admin_updated = True
 
@@ -786,6 +1093,7 @@ async def update_security_pins(req: PinUpdateRequest):
         "teacher_pin_updated": teacher_updated,
         "admin_pin_updated": admin_updated,
         "boards_synced": boards_synced,
+        "token": create_admin_session_token(ttl_seconds=1800),
         "message": " ve ".join(msg_parts) + "! 🔐"
     }
 
@@ -832,13 +1140,9 @@ async def _fetch_board_frame(
 
 
 @app.post("/api/board/screenshot")
-async def get_board_screenshot(req: ScreenshotRequest):
+async def get_board_screenshot(req: ScreenshotRequest, request: Request):
     """Müdür / İdare panelinden tahtanın canlı ekran görüntüsünü (Smart Diff destekli) çeker"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     target_id = manager.find_board(req.board_id)
     if not target_id or not manager.is_connected(target_id):
@@ -868,13 +1172,9 @@ async def get_board_screenshot(req: ScreenshotRequest):
 
 
 @app.post("/api/boards/thumbnails")
-async def get_boards_thumbnails(req: ThumbnailsRequest):
+async def get_boards_thumbnails(req: ThumbnailsRequest, request: Request):
     """Müdür Önizleme Duvarı için bağlı tüm tahtalardan hafif küçük kareleri toplu ve Smart Diff ile ister"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     width = max(160, min(480, req.width))
     quality = max(20, min(65, req.quality))
@@ -910,13 +1210,9 @@ async def get_boards_thumbnails(req: ThumbnailsRequest):
 # ⚡ Toplu Yönetim API'leri (Tüm Tahtaları Kilitle / Aç / Kapat)
 # -------------------------------------------------------------
 @app.post("/api/bulk/lock")
-async def bulk_lock_boards(req: BulkActionRequest):
+async def bulk_lock_boards(req: BulkActionRequest, request: Request):
     """Müdür panelinden açık olan tüm tahtaları tek tıkla kilitler"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     count = await manager.broadcast_all({
         "action": "lock",
@@ -933,13 +1229,9 @@ async def bulk_lock_boards(req: BulkActionRequest):
     }
 
 @app.post("/api/bulk/unlock")
-async def bulk_unlock_boards(req: BulkActionRequest):
+async def bulk_unlock_boards(req: BulkActionRequest, request: Request):
     """Müdür panelinden tüm tahtaların kilidini topluca açar"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     count = await manager.broadcast_all({
         "action": "unlock",
@@ -956,13 +1248,9 @@ async def bulk_unlock_boards(req: BulkActionRequest):
     }
 
 @app.post("/api/bulk/poweroff")
-async def bulk_poweroff_boards(req: BulkActionRequest):
+async def bulk_poweroff_boards(req: BulkActionRequest, request: Request):
     """Müdür panelinden açık olan tüm tahtaları tamamen kapatır (shutdown)"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     count = await manager.broadcast_all({
         "action": "poweroff",
@@ -977,13 +1265,9 @@ async def bulk_poweroff_boards(req: BulkActionRequest):
     }
 
 @app.post("/api/bulk/update")
-async def bulk_update_boards(req: BulkActionRequest):
+async def bulk_update_boards(req: BulkActionRequest, request: Request):
     """Müdür panelinden açık olan tüm tahtalara tek tıkla uzaktan güncelleme komutu gönderir"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     count = await manager.broadcast_all({
         "action": "update_client",
@@ -1001,13 +1285,9 @@ async def bulk_update_boards(req: BulkActionRequest):
     }
 
 @app.post("/api/board/update")
-async def update_single_board(req: BoardUpdateRequest):
+async def update_single_board(req: BoardUpdateRequest, request: Request):
     """Müdür panelinden seçili tek bir tahtaya uzaktan güncelleme komutu gönderir"""
-    if req.admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, req.admin_pin)
 
     target_id = manager.find_board(req.board_id)
     if not target_id:
@@ -1041,17 +1321,14 @@ async def update_single_board(req: BoardUpdateRequest):
 # -------------------------------------------------------------
 @app.post("/api/files/send")
 async def send_file_to_boards(
-    admin_pin: str = Form(...),
+    request: Request,
+    admin_pin: Optional[str] = Form(""),
     target: str = Form("all"),
     open_after: bool = Form(False),
     file: UploadFile = File(...),
 ):
     """Telefondan yüklenen PDF/Office/medya dosyasını hedef tahtaların masaüstüne aktarır."""
-    if admin_pin != config.ADMIN_PIN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Hatalı Müdür/İdare Giriş Kodu!"
-        )
+    require_admin_auth(request, admin_pin)
 
     target_id = None
     if target == "all":
@@ -1078,7 +1355,7 @@ async def send_file_to_boards(
 
     manager.cleanup_expired_uploads()
 
-    file_id = str(uuid.uuid4())[:12]
+    file_id = secrets.token_urlsafe(24)
     disk_path = os.path.join(UPLOAD_DIR, f"{file_id}_{safe_name}")
     total_bytes = 0
 

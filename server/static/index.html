@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=0.7.0">
+  <link rel="stylesheet" href="style.css?v=0.8.0">
   <!-- HTML5 QR Code Okuyucu Kütüphanesi -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
@@ -135,21 +135,39 @@
     <section id="offlineTab" class="tab-content">
       <div class="card offline-card">
         <h3>İnternetsiz Acil Kilit Açma</h3>
-        <p class="offline-desc">
-          Okulda internet koptuğunda veya telefonunuz çekmediğinde, tahta ekranındaki dokunmatik tuş takımına aşağıdaki kodu giriniz:
-        </p>
 
-        <div class="totp-box">
-          <div class="totp-label">GÜNCEL GEÇİCİ PIN</div>
-          <div id="totpCode" class="totp-code">----</div>
-          <div class="totp-timer">
-            <div id="totpBar" class="timer-bar"></div>
+        <!-- Öğretmen Doğrulama Kapısı (İlk açılışta TOTP gizliliği) -->
+        <div id="offlinePinGate">
+          <p class="offline-desc">
+            Acil durum kodunu görüntüleyebilmek için lütfen ortak Öğretmen PIN kodunuzu 1 kez doğrulayınız (cihazınızda güvenle hatırlanır):
+          </p>
+          <div class="input-group" style="margin-top: 10px;">
+            <label for="offlineVerifyPin">👨‍🏫 Ortak Öğretmen PIN Kodu:</label>
+            <input type="password" id="offlineVerifyPin" placeholder="Örn: 1234" maxlength="8" inputmode="numeric" onkeydown="if(event.key==='Enter') verifyOfflineTabAccess()">
           </div>
-          <small id="totpSec">30 saniye sonra değişecek</small>
+          <div id="offlineVerifyError" class="admin-login-error hidden"></div>
+          <button id="btnVerifyOfflinePin" type="button" class="btn btn-primary" onclick="verifyOfflineTabAccess()">
+            🔓 Kodu Göster
+          </button>
         </div>
 
-        <div class="info-note">
-          💡 Bu kod tahtada ve telefonda ortak matematiksel saat algoritmasıyla üretilir. Ne internet ne de Wi-Fi gerektirir.
+        <div id="offlineTotpContent" class="hidden">
+          <p class="offline-desc">
+            Okulda internet koptuğunda veya telefonunuz çekmediğinde, tahta ekranındaki dokunmatik tuş takımına aşağıdaki kodu giriniz:
+          </p>
+
+          <div class="totp-box">
+            <div class="totp-label">GÜNCEL GEÇİCİ PIN</div>
+            <div id="totpCode" class="totp-code">----</div>
+            <div class="totp-timer">
+              <div id="totpBar" class="timer-bar"></div>
+            </div>
+            <small id="totpSec">30 saniye sonra değişecek</small>
+          </div>
+
+          <div class="info-note">
+            💡 Bu kod tahtada ve telefonda ortak matematiksel saat algoritmasıyla üretilir. Ne internet ne de Wi-Fi gerektirir.
+          </div>
         </div>
       </div>
     </section>
@@ -177,7 +195,6 @@
           <span class="admin-session-badge">🛡️ İdare Oturumu Açık</span>
           <button type="button" class="btn-admin-logout" onclick="logoutAdminPanel()">🔒 Çıkış</button>
         </div>
-        <input type="hidden" id="adminPin" value="">
 
         <!-- İdare İçi Alt Segment (Hap Butonlar) -->
         <div class="admin-sub-tabs">
@@ -364,7 +381,7 @@
     <!-- Geliştirici Alt Bilgi Rozeti -->
     <footer style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; margin-top:8px; color:#94a3b8; font-size:0.78rem; border-top:1px solid rgba(56,189,248,0.15);">
       <img src="/icons/mercan_robotik_icon.png" alt="Mercan Robotik" style="width:24px; height:24px; border-radius:6px;">
-      <span>Geliştirici: <strong style="color:#38bdf8;">MERCAN</strong> <strong style="color:#ff5e4d;">ROBOTİK</strong> • 🛡️ ET Güvenliği Aktif • v0.7.0</span>
+      <span>Geliştirici: <strong style="color:#38bdf8;">MERCAN</strong> <strong style="color:#ff5e4d;">ROBOTİK</strong> • 🛡️ ET Güvenliği Aktif • v0.8.0</span>
     </footer>
 
     <!-- Güç Kapatma Onay Modalı -->
@@ -431,6 +448,6 @@
     <div id="toast" class="toast hidden"></div>
   </div>
 
-  <script src="app.js?v=0.7.0"></script>
+  <script src="app.js?v=0.8.0"></script>
 </body>
 </html>

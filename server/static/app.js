@@ -8,7 +8,7 @@ let totpInterval = null;
 let cachedOnlineBoards = [];
 let selectedBoard = { id: "", name: "", status: "" };
 let isAdminAuthenticated = false;
-let verifiedAdminPin = "";
+let adminSessionToken = "";
 
 // Sayfa yüklendiğinde
 document.addEventListener("DOMContentLoaded", () => {
@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   updateSelectedBoardBadge();
   renderAdminGateState();
+  renderOfflineGateState();
 
   // Çevrimiçi tahtaları listele
   fetchOnlineBoards();
@@ -49,12 +50,103 @@ document.addEventListener("DOMContentLoaded", () => {
   setupPwa();
 });
 
-function getAdminPinValue() {
-  if (isAdminAuthenticated && verifiedAdminPin) {
-    return verifiedAdminPin;
+function getAdminTokenValue() {
+  if (isAdminAuthenticated && adminSessionToken) {
+    return adminSessionToken;
   }
-  const el = document.getElementById("adminPin");
-  return (el && el.value.trim()) || "";
+  return "";
+}
+
+function getAdminHeaders(extra = {}) {
+  const token = getAdminTokenValue();
+  const headers = { ...extra };
+  if (token) {
+    headers["X-Admin-Token"] = token;
+  }
+  return headers;
+}
+
+function renderOfflineGateState() {
+  const gate = document.getElementById("offlinePinGate");
+  const content = document.getElementById("offlineTotpContent");
+  if (!gate || !content) return;
+
+  const isTeacherVerified = localStorage.getItem("etap_teacher_verified") === "true";
+  if (isTeacherVerified) {
+    gate.classList.add("hidden");
+    content.classList.remove("hidden");
+  } else {
+    gate.classList.remove("hidden");
+    content.classList.add("hidden");
+  }
+}
+
+async function verifyOfflineTabAccess() {
+  const input = document.getElementById("offlineVerifyPin");
+  const errorEl = document.getElementById("offlineVerifyError");
+  const btn = document.getElementById("btnVerifyOfflinePin");
+  if (!input) return;
+
+  const pin = input.value.trim();
+  if (!pin) {
+    if (errorEl) {
+      errorEl.textContent = "Lütfen Ortak Öğretmen PIN Kodunu giriniz.";
+      errorEl.classList.remove("hidden");
+    }
+    input.focus();
+    return;
+  }
+
+  if (errorEl) {
+    errorEl.classList.add("hidden");
+    errorEl.textContent = "";
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Doğrulanıyor...";
+  }
+
+  try {
+    const res = await fetch("/api/teacher/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: pin })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      localStorage.setItem("etap_teacher_verified", "true");
+      localStorage.setItem("etap_teacher_pin", pin);
+      const teacherPinInput = document.getElementById("teacherPin");
+      if (teacherPinInput) {
+        teacherPinInput.value = pin;
+        updateTeacherPinUI(false);
+      }
+      input.value = "";
+      renderOfflineGateState();
+      showToast("Öğretmen doğrulandı. Acil PIN ekranı açıldı.", "success");
+    } else {
+      const msg = data.detail || "Hatalı Öğretmen PIN Kodu!";
+      if (errorEl) {
+        errorEl.textContent = msg;
+        errorEl.classList.remove("hidden");
+      }
+      showToast(msg, "error");
+      input.select();
+    }
+  } catch (err) {
+    const msg = "Sunucuya bağlanılamadı!";
+    if (errorEl) {
+      errorEl.textContent = msg;
+      errorEl.classList.remove("hidden");
+    }
+    showToast(msg, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🔓 Kodu Göster";
+    }
+  }
 }
 
 function renderAdminGateState() {
@@ -106,9 +198,7 @@ async function verifyAdminLogin() {
 
     if (res.ok && data.success) {
       isAdminAuthenticated = true;
-      verifiedAdminPin = pin;
-      const hiddenPinEl = document.getElementById("adminPin");
-      if (hiddenPinEl) hiddenPinEl.value = pin;
+      adminSessionToken = data.token || "";
       input.value = "";
       renderAdminGateState();
       showToast(data.message || "İdare girişi doğrulandı.", "success");
@@ -147,10 +237,15 @@ async function verifyAdminLogin() {
 function logoutAdminPanel(silent = false) {
   stopLiveWatch();
   stopPreviewWall();
+  const prevToken = adminSessionToken;
+  if (prevToken) {
+    fetch("/api/admin/logout", {
+      method: "POST",
+      headers: { "X-Admin-Token": prevToken }
+    }).catch(() => {});
+  }
   isAdminAuthenticated = false;
-  verifiedAdminPin = "";
-  const hiddenPinEl = document.getElementById("adminPin");
-  if (hiddenPinEl) hiddenPinEl.value = "";
+  adminSessionToken = "";
   const loginInput = document.getElementById("adminLoginPin");
   if (loginInput) loginInput.value = "";
   const errorEl = document.getElementById("adminLoginError");
@@ -177,6 +272,7 @@ function switchTab(tabName) {
   } else if (tabName === "offline") {
     document.querySelector(".tab-btn:nth-child(2)").classList.add("active");
     document.getElementById("offlineTab").classList.add("active");
+    renderOfflineGateState();
   } else if (tabName === "admin") {
     document.querySelector(".tab-btn:nth-child(3)").classList.add("active");
     document.getElementById("adminTab").classList.add("active");
@@ -284,11 +380,26 @@ async function fetchOnlineBoards() {
 }
 
 async function cleanupOfflineBoards() {
+  const token = getAdminTokenValue();
+  if (!token) {
+    logoutAdminPanel(true);
+    showToast("Lütfen İdare girişi yapınız!", "error");
+    return;
+  }
   try {
-    const res = await fetch("/api/boards/cleanup", { method: "POST" });
+    const res = await fetch("/api/boards/cleanup", {
+      method: "POST",
+      headers: getAdminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({})
+    });
     const data = await res.json();
-    showToast(data.message || "Temizlendi", "success");
-    fetchOnlineBoards();
+    if (res.ok && data.success) {
+      showToast(data.message || "Temizlendi", "success");
+      fetchOnlineBoards();
+    } else {
+      if (res.status === 401) logoutAdminPanel(true);
+      showToast(data.detail || "Temizleme yetkisi reddedildi", "error");
+    }
   } catch (e) {
     showToast("Temizleme sırasında hata oluştu", "error");
   }
@@ -668,6 +779,8 @@ async function sendUnlock() {
     const data = await res.json();
 
     if (res.ok && data.success) {
+      localStorage.setItem("etap_teacher_verified", "true");
+      renderOfflineGateState();
       showToast(data.message, "success");
       updateTeacherPinUI(false);
       if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -712,6 +825,8 @@ async function sendLock() {
     const data = await res.json();
 
     if (res.ok && data.success) {
+      localStorage.setItem("etap_teacher_verified", "true");
+      renderOfflineGateState();
       showToast(data.message, "success");
     } else {
       showToast(data.detail || "Hata oluştu!", "error");
@@ -793,16 +908,16 @@ async function sendPoweroff() {
 // 📢 Müdür / İdare Duyuru Yayını & Bağlantı Gönderme
 // -------------------------------------------------------------
 async function sendBroadcast() {
-  const adminPin = getAdminPinValue();
+  const adminToken = getAdminTokenValue();
   const target = document.getElementById("adminTarget").value;
   const message = document.getElementById("adminMessage").value.trim();
   const linkUrl = (document.getElementById("adminLinkUrl")?.value || "").trim();
   const linkLabel = (document.getElementById("adminLinkLabel")?.value || "").trim();
   const duration = parseInt(document.getElementById("adminDuration").value) || 120;
 
-  if (!adminPin) {
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen İdare PIN kodunu girin!", "error");
+    showToast("Lütfen önce İdare girişi yapın!", "error");
     return;
   }
   if (!message) {
@@ -813,9 +928,8 @@ async function sendBroadcast() {
   try {
     const res = await fetch("/api/broadcast", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAdminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
-        admin_pin: adminPin,
         target: target,
         message: message,
         link_url: linkUrl,
@@ -844,21 +958,20 @@ async function sendBroadcast() {
 }
 
 async function clearBroadcast() {
-  const adminPin = getAdminPinValue();
+  const adminToken = getAdminTokenValue();
   const target = document.getElementById("adminTarget").value;
 
-  if (!adminPin) {
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen İdare PIN kodunu girin!", "error");
+    showToast("Lütfen önce İdare girişi yapın!", "error");
     return;
   }
 
   try {
     const res = await fetch("/api/broadcast/clear", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAdminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
-        admin_pin: adminPin,
         target: target
       })
     });
@@ -901,7 +1014,7 @@ function onAdminFileSelected() {
 }
 
 function sendFileToBoards() {
-  const adminPin = getAdminPinValue("adminPin");
+  const adminToken = getAdminTokenValue();
   const target = document.getElementById("adminFileTarget")?.value || "all";
   const fileInput = document.getElementById("adminFileInput");
   const openAfter = Boolean(document.getElementById("adminFileOpenAfter")?.checked);
@@ -910,9 +1023,9 @@ function sendFileToBoards() {
   const progressBar = document.getElementById("fileUploadProgressBar");
   const progressText = document.getElementById("fileUploadProgressText");
 
-  if (!adminPin) {
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen İdare PIN kodunu girin!", "error");
+    showToast("Lütfen önce İdare girişi yapın!", "error");
     return;
   }
 
@@ -929,7 +1042,6 @@ function sendFileToBoards() {
   }
 
   const formData = new FormData();
-  formData.append("admin_pin", adminPin);
   formData.append("target", target);
   formData.append("open_after", openAfter ? "true" : "false");
   formData.append("file", file);
@@ -954,6 +1066,7 @@ function sendFileToBoards() {
 
   const xhr = new XMLHttpRequest();
   xhr.open("POST", "/api/files/send", true);
+  xhr.setRequestHeader("X-Admin-Token", adminToken);
   xhr.timeout = 120000;
 
   xhr.upload.onprogress = (e) => {
@@ -977,6 +1090,7 @@ function sendFileToBoards() {
       if (fileInput) fileInput.value = "";
       onAdminFileSelected();
     } else {
+      if (xhr.status === 401) logoutAdminPanel(true);
       showToast(data.detail || "Dosya gönderilemedi!", "error");
     }
     resetUploadUI();
@@ -1014,12 +1128,12 @@ async function fetchSchoolName() {
 }
 
 async function sendSchoolNameUpdate() {
-  const adminPin = getAdminPinValue();
+  const adminToken = getAdminTokenValue();
   const schoolName = document.getElementById("schoolNameInput").value.trim();
 
-  if (!adminPin) {
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen İdare Giriş Kodunu girin!", "error");
+    showToast("Lütfen önce İdare girişi yapın!", "error");
     return;
   }
   if (!schoolName) {
@@ -1030,9 +1144,8 @@ async function sendSchoolNameUpdate() {
   try {
     const res = await fetch("/api/settings/school", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAdminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
-        admin_pin: adminPin,
         school_name: schoolName
       })
     });
@@ -1053,10 +1166,10 @@ async function sendSchoolNameUpdate() {
 // 🔐 PIN & Güvenlik Ayarları (Öğretmen & İdare PIN Değiştirme)
 // -------------------------------------------------------------
 async function sendPinUpdate() {
-  const currentAdminPin = getAdminPinValue();
-  if (!currentAdminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen İdare Giriş Kodunu giriniz!", "error");
+    showToast("Lütfen önce İdare girişi yapınız!", "error");
     return;
   }
 
@@ -1099,9 +1212,8 @@ async function sendPinUpdate() {
   try {
     const res = await fetch("/api/settings/pins", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAdminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
-        current_admin_pin: currentAdminPin,
         new_teacher_pin: newTeacherPin || null,
         new_admin_pin: newAdminPin || null
       })
@@ -1109,10 +1221,8 @@ async function sendPinUpdate() {
     const data = await res.json();
 
     if (res.ok && data.success) {
-      if (newAdminPin) {
-        verifiedAdminPin = newAdminPin;
-        const hiddenPinEl = document.getElementById("adminPin");
-        if (hiddenPinEl) hiddenPinEl.value = newAdminPin;
+      if (data.token) {
+        adminSessionToken = data.token;
       }
       if (newTeacherEl) newTeacherEl.value = "";
       if (newAdminEl) newAdminEl.value = "";
@@ -1239,10 +1349,10 @@ function togglePreviewWall() {
 }
 
 function startPreviewWall() {
-  const adminPin = getAdminPinValue();
-  if (!adminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Önizleme duvarı için önce İdare Giriş Kodunu giriniz!", "error");
+    showToast("Önizleme duvarı için önce İdare girişi yapınız!", "error");
     return;
   }
 
@@ -1303,8 +1413,8 @@ async function fetchPreviewWallTick(sessionId) {
     return;
   }
 
-  const adminPin = getAdminPinValue("adminPin");
-  if (!adminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     stopPreviewWall();
     return;
   }
@@ -1312,9 +1422,8 @@ async function fetchPreviewWallTick(sessionId) {
   try {
     const res = await fetch("/api/boards/thumbnails", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAdminHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
-        admin_pin: adminPin,
         width: 320,
         quality: 40,
         hashes: previewWallHashes
@@ -1364,10 +1473,10 @@ async function fetchPreviewWallTick(sessionId) {
 }
 
 async function openScreenshotModal(boardId, boardName, autoStartLive = false) {
-  const adminPin = getAdminPinValue();
-  if (!adminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen İdare Giriş Kodunu giriniz!", "error");
+    showToast("Lütfen önce İdare girişi yapınız!", "error");
     return;
   }
 
@@ -1395,7 +1504,7 @@ async function openScreenshotModal(boardId, boardName, autoStartLive = false) {
   wrapper.classList.add("hidden");
   modal.classList.remove("hidden");
 
-  const ok = await requestBoardScreenshot(boardId, adminPin, {
+  const ok = await requestBoardScreenshot(boardId, adminToken, {
     width: autoStartLive ? 720 : 960,
     quality: autoStartLive ? 55 : 72,
     lastHash: "",
@@ -1408,7 +1517,7 @@ async function openScreenshotModal(boardId, boardName, autoStartLive = false) {
 
 async function refreshCurrentScreenshot() {
   if (!currentScreenshotBoard) return;
-  const adminPin = getAdminPinValue("adminPin");
+  const adminToken = getAdminTokenValue();
   const loading = document.getElementById("screenshotLoading");
   const wrapper = document.getElementById("screenshotImgWrapper");
   currentLiveFrameHash = "";
@@ -1416,7 +1525,7 @@ async function refreshCurrentScreenshot() {
   loading.classList.remove("hidden");
   wrapper.classList.add("hidden");
 
-  await requestBoardScreenshot(currentScreenshotBoard.id, adminPin, {
+  await requestBoardScreenshot(currentScreenshotBoard.id, adminToken, {
     width: liveWatchActive ? 720 : 960,
     quality: liveWatchActive ? 55 : 72,
     lastHash: "",
@@ -1424,7 +1533,7 @@ async function refreshCurrentScreenshot() {
   });
 }
 
-async function requestBoardScreenshot(boardId, adminPin, options = {}) {
+async function requestBoardScreenshot(boardId, adminToken, options = {}) {
   const loading = document.getElementById("screenshotLoading");
   const wrapper = document.getElementById("screenshotImgWrapper");
   const img = document.getElementById("screenshotImg");
@@ -1439,10 +1548,12 @@ async function requestBoardScreenshot(boardId, adminPin, options = {}) {
   try {
     const res = await fetch("/api/board/screenshot", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(adminToken ? { "X-Admin-Token": adminToken } : {})
+      },
       body: JSON.stringify({
         board_id: boardId,
-        admin_pin: adminPin,
         width: width,
         quality: quality,
         last_hash: lastHash
@@ -1525,9 +1636,10 @@ function toggleLiveWatch() {
 
 function startLiveWatch() {
   if (!currentScreenshotBoard) return;
-  const adminPin = getAdminPinValue("adminPin");
-  if (!adminPin) {
-    showToast("Lütfen İdare Giriş Kodunu giriniz!", "error");
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
+    logoutAdminPanel(true);
+    showToast("Lütfen önce İdare girişi yapınız!", "error");
     return;
   }
 
@@ -1583,13 +1695,13 @@ async function fetchLiveWatchTick(sessionId) {
     return;
   }
 
-  const adminPin = getAdminPinValue("adminPin");
-  if (!adminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     stopLiveWatch();
     return;
   }
 
-  await requestBoardScreenshot(currentScreenshotBoard.id, adminPin, {
+  await requestBoardScreenshot(currentScreenshotBoard.id, adminToken, {
     width: 720,
     quality: 55,
     lastHash: currentLiveFrameHash,
@@ -1622,10 +1734,10 @@ function closeScreenshotModal() {
 // ⚡ Toplu Yönetim Aksiyonları
 // -------------------------------------------------------------
 async function triggerBulkAction(action) {
-  const adminPin = getAdminPinValue();
-  if (!adminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen önce İdare Giriş Kodunu giriniz!", "error");
+    showToast("Lütfen önce İdare girişi yapınız!", "error");
     return;
   }
 
@@ -1643,8 +1755,8 @@ async function triggerBulkAction(action) {
   try {
     const res = await fetch(endpointMap[action], {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ admin_pin: adminPin })
+      headers: getAdminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({})
     });
     const data = await res.json();
 
@@ -1661,10 +1773,10 @@ async function triggerBulkAction(action) {
 }
 
 function confirmBulkPoweroff() {
-  const adminPin = getAdminPinValue();
-  if (!adminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen önce İdare Giriş Kodunu giriniz!", "error");
+    showToast("Lütfen önce İdare girişi yapınız!", "error");
     return;
   }
 
@@ -1674,10 +1786,10 @@ function confirmBulkPoweroff() {
 }
 
 function confirmBulkUpdate() {
-  const adminPin = getAdminPinValue();
-  if (!adminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen önce İdare Giriş Kodunu giriniz!", "error");
+    showToast("Lütfen önce İdare girişi yapınız!", "error");
     return;
   }
 
@@ -1687,10 +1799,10 @@ function confirmBulkUpdate() {
 }
 
 async function triggerSingleBoardUpdate(boardId, boardName) {
-  const adminPin = getAdminPinValue();
-  if (!adminPin) {
+  const adminToken = getAdminTokenValue();
+  if (!adminToken) {
     logoutAdminPanel(true);
-    showToast("Lütfen önce İdare Giriş Kodunu giriniz!", "error");
+    showToast("Lütfen önce İdare girişi yapınız!", "error");
     return;
   }
 
@@ -1701,8 +1813,8 @@ async function triggerSingleBoardUpdate(boardId, boardName) {
   try {
     const res = await fetch("/api/board/update", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ board_id: boardId, admin_pin: adminPin })
+      headers: getAdminHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ board_id: boardId })
     });
     const data = await res.json();
 

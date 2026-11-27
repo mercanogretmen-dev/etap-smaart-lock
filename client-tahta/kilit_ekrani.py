@@ -15,6 +15,7 @@ import re
 import configparser
 import asyncio
 import hashlib
+import hmac
 import uuid
 import subprocess
 import webbrowser
@@ -43,7 +44,7 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v0.7.0"
+APP_VERSION = "v0.8.0"
 DEFAULT_SCHOOL_NAME = "T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ"
 DEFAULT_TEACHER_PIN = "1234"
 
@@ -85,6 +86,26 @@ def get_asset_path(filename: str) -> str:
     return os.path.join(BASE_DIR, "assets", filename)
 
 
+def hash_local_secret(plain: str) -> str:
+    """Yerel PIN ve yönetici şifrelerini config.ini içinde geri döndürülemez SHA-256 özete çevirir."""
+    clean = (plain or "").strip()
+    if clean.startswith("sha256$") and len(clean) == 71:
+        return clean
+    digest = hashlib.sha256(f"etap-local-v1:{clean}".encode("utf-8")).hexdigest()
+    return f"sha256${digest}"
+
+
+def verify_local_secret(entered: str, stored: str) -> bool:
+    """Girilen PIN/şifreyi hash veya geriye dönük düz metin kayıtla sabit zamanlı doğrular."""
+    clean_entered = (entered or "").strip()
+    clean_stored = (stored or "").strip()
+    if not clean_entered or not clean_stored:
+        return False
+    if clean_stored.startswith("sha256$"):
+        return hmac.compare_digest(hash_local_secret(clean_entered), clean_stored)
+    return hmac.compare_digest(clean_entered, clean_stored)
+
+
 def get_config_search_paths():
     """Tüm olası konfigürasyon yollarını öncelik sırasıyla döner."""
     return [
@@ -111,13 +132,17 @@ def load_config():
     if "GENEL" not in config:
         config["GENEL"] = {}
 
+    default_tpin_hash = hash_local_secret(DEFAULT_TEACHER_PIN)
+    def _is_default_tpin(val: str) -> bool:
+        return (not val) or val in (DEFAULT_TEACHER_PIN, default_tpin_hash)
+
     # En yeni dosya varsayılan kurum adı veya PIN taşıyorsa (örn. paket güncellemesi sonrası),
     # diğer kalıcı ayar dosyalarındaki özelleştirilmiş değerleri koru
     curr_school = str(config["GENEL"].get("okul_adi", "")).strip()
     curr_tpin = str(config["GENEL"].get("ogretmen_pin", "")).strip()
     if len(existing_paths) > 1 and (
         not curr_school or curr_school == DEFAULT_SCHOOL_NAME
-        or not curr_tpin or curr_tpin == DEFAULT_TEACHER_PIN
+        or _is_default_tpin(curr_tpin)
     ):
         for p in existing_paths[1:]:
             alt_cfg = configparser.ConfigParser()
@@ -131,7 +156,7 @@ def load_config():
                     curr_school = alt_school
                     print(f"[CONFIG] Ozellestirilmis kurum adi korundu [{p}]: {alt_school}")
                 alt_tpin = str(alt_cfg["GENEL"].get("ogretmen_pin", "")).strip()
-                if (not curr_tpin or curr_tpin == DEFAULT_TEACHER_PIN) and alt_tpin and alt_tpin != DEFAULT_TEACHER_PIN:
+                if _is_default_tpin(curr_tpin) and not _is_default_tpin(alt_tpin):
                     config["GENEL"]["ogretmen_pin"] = alt_tpin
                     curr_tpin = alt_tpin
                     print(f"[CONFIG] Ozellestirilmis ogretmen PIN korundu [{p}]")
@@ -142,14 +167,29 @@ def load_config():
         "sinif_adi": "9-A",
         "okul_adi": DEFAULT_SCHOOL_NAME,
         "sunucu_ws_url": "wss://etap-smaart-lock.onrender.com/ws/board/",
-        "ogretmen_pin": DEFAULT_TEACHER_PIN,
-        "yonetici_sifre": "admin123",
+        "ogretmen_pin": hash_local_secret(DEFAULT_TEACHER_PIN),
+        "yonetici_sifre": hash_local_secret("admin123"),
         "cihaz_id": "",
-        "hardware_elements": ""
+        "hardware_elements": "",
+        "tahta_anahtar": ""
     }
     for k, v in defaults.items():
         if k not in config["GENEL"] or not str(config["GENEL"][k]).strip():
             config["GENEL"][k] = v
+
+    # Eski sürümlerden kalan düz metin şifreleri SHA-256 özetine yükselt
+    migrated_plain = False
+    for secret_key in ("ogretmen_pin", "yonetici_sifre"):
+        val = str(config["GENEL"].get(secret_key, "")).strip()
+        if val and not (val.startswith("sha256$") and len(val) == 71):
+            config["GENEL"][secret_key] = hash_local_secret(val)
+            migrated_plain = True
+
+    if migrated_plain and existing_paths:
+        try:
+            save_config(config)
+        except Exception:
+            pass
 
     return config
 
@@ -305,8 +345,14 @@ def get_device_id(config, force_regenerate=False):
 def save_config(config):
     """
     Ayarları kalıcı olarak TÜM erişilebilir konfigürasyon yollarına (/etc, ~/.config, yerel) kaydeder.
-    Böylece tahta yeniden başlatılsa bile yeni isim ve okul adı asla kaybolmaz.
+    Böylece tahta yeniden başlatılsa bile yeni isim ve okul adı asla kaybolmaz; şifreler daima hashli saklanır.
     """
+    if "GENEL" in config:
+        for secret_key in ("ogretmen_pin", "yonetici_sifre"):
+            raw_val = str(config["GENEL"].get(secret_key, "")).strip()
+            if raw_val and not (raw_val.startswith("sha256$") and len(raw_val) == 71):
+                config["GENEL"][secret_key] = hash_local_secret(raw_val)
+
     saved_any = False
     target_paths = [
         SYSTEM_CONFIG_PATH,
@@ -340,12 +386,13 @@ class WebSocketClientThread(QThread):
     signal_status = pyqtSignal(bool)           # True = Çevrimiçi, False = Çevrimdışı
     signal_command = pyqtSignal(dict)          # Sunucudan gelen kilit/duyuru komutları
 
-    def __init__(self, ws_url: str, device_id: str, board_name: str, school_name: str = ""):
+    def __init__(self, ws_url: str, device_id: str, board_name: str, school_name: str = "", board_key: str = ""):
         super().__init__()
         self.raw_ws_url = ws_url.rstrip("/")
         self.device_id = device_id
         self.board_name = board_name
         self.school_name = (school_name or "").strip()
+        self.board_key = (board_key or "").strip()
         self.running = True
         self.ws = None
         self.loop = None
@@ -356,10 +403,13 @@ class WebSocketClientThread(QThread):
         encoded_name = urllib.parse.quote(self.board_name)
         encoded_ver = urllib.parse.quote(APP_VERSION)
         encoded_school = urllib.parse.quote(self.school_name or "")
-        self.ws_url = (
+        url = (
             f"{self.raw_ws_url}/{self.device_id}"
             f"?name={encoded_name}&version={encoded_ver}&school_name={encoded_school}"
         )
+        if self.board_key:
+            url += f"&key={urllib.parse.quote(self.board_key)}"
+        self.ws_url = url
 
     def update_school_name_param(self, school_name: str):
         self.school_name = (school_name or "").strip()
@@ -2293,7 +2343,7 @@ class AdminExitOverlayWidget(QWidget):
 
     def verify_exit(self):
         pwd = self.input_pwd.text().strip()
-        if pwd == self.lock_window.yonetici_sifre:
+        if verify_local_secret(pwd, self.lock_window.yonetici_sifre):
             self.lock_window.is_locked = False
             try:
                 self.lock_window.releaseKeyboard()
@@ -2544,7 +2594,7 @@ class AdminSettingsAuthOverlayWidget(QWidget):
 
     def verify_auth(self):
         pwd = self.input_pwd.text().strip()
-        if pwd == self.lock_window.yonetici_sifre:
+        if verify_local_secret(pwd, self.lock_window.yonetici_sifre):
             self.hide_overlay()
             if hasattr(self.lock_window, "settings_overlay") and self.lock_window.settings_overlay:
                 self.lock_window.settings_overlay.show_settings()
@@ -3049,8 +3099,9 @@ class LockScreenWindow(QMainWindow):
         self.sinif_adi = self.cfg.get("GENEL", "sinif_adi", fallback="9-A")
         self.okul_adi = self.cfg.get("GENEL", "okul_adi", fallback="T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ")
         self.sunucu_url = self.cfg.get("GENEL", "sunucu_ws_url", fallback="wss://etap-smaart-lock.onrender.com/ws/board/")
-        self.ogretmen_pin = self.cfg.get("GENEL", "ogretmen_pin", fallback="1234")
-        self.yonetici_sifre = self.cfg.get("GENEL", "yonetici_sifre", fallback="admin123")
+        self.ogretmen_pin = self.cfg.get("GENEL", "ogretmen_pin", fallback=hash_local_secret(DEFAULT_TEACHER_PIN))
+        self.yonetici_sifre = self.cfg.get("GENEL", "yonetici_sifre", fallback=hash_local_secret("admin123"))
+        self.tahta_anahtar = self.cfg.get("GENEL", "tahta_anahtar", fallback="").strip()
 
         self.entered_pin = ""
         self.is_locked = True
@@ -3712,7 +3763,7 @@ class LockScreenWindow(QMainWindow):
 
         # Güvenlik Koruması: Sabit '1234' kaldırıldı!
         # Sadece öğretmenin telefonundaki 30 saniyelik dinamik TOTP kodu veya yetkili şifresi açar.
-        if self.entered_pin == totp_code or self.entered_pin == self.yonetici_sifre:
+        if self.entered_pin == totp_code or verify_local_secret(self.entered_pin, self.yonetici_sifre):
             self.failed_pin_attempts = 0
             self.lockout_until = 0.0
             self.clear_pin()
@@ -3816,7 +3867,11 @@ class LockScreenWindow(QMainWindow):
     # -------------------------------------------------------------
     def init_network(self):
         self.ws_thread = WebSocketClientThread(
-            self.sunucu_url, self.cihaz_id, self.sinif_adi, school_name=self.okul_adi
+            self.sunucu_url,
+            self.cihaz_id,
+            self.sinif_adi,
+            school_name=self.okul_adi,
+            board_key=self.tahta_anahtar
         )
         self.ws_thread.signal_status.connect(self.on_network_status_change)
         self.ws_thread.signal_command.connect(self.on_server_command)
@@ -4042,11 +4097,14 @@ class LockScreenWindow(QMainWindow):
             self.ws_thread.update_school_name_param(self.okul_adi)
 
     def update_teacher_pin(self, new_pin: str):
-        """Sunucudan veya idare panelinden gelen yeni Öğretmen PIN kodunu kaydeder."""
+        """Sunucudan veya idare panelinden gelen yeni Öğretmen PIN kodunu hashleyip kaydeder."""
         clean_pin = (new_pin or "").strip()
-        if not re.fullmatch(r"\d{4,8}", clean_pin) or clean_pin == self.ogretmen_pin:
+        if not re.fullmatch(r"\d{4,8}", clean_pin):
             return
-        self.ogretmen_pin = clean_pin
+        hashed_pin = hash_local_secret(clean_pin)
+        if hashed_pin == self.ogretmen_pin:
+            return
+        self.ogretmen_pin = hashed_pin
         self.cfg.set("GENEL", "ogretmen_pin", self.ogretmen_pin)
         save_config(self.cfg)
 
