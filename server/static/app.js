@@ -7,9 +7,14 @@ let isScanning = false;
 let totpInterval = null;
 let cachedOnlineBoards = [];
 let selectedBoard = { id: "", name: "", status: "" };
+let isAdminAuthenticated = false;
+let verifiedAdminPin = "";
 
 // Sayfa yüklendiğinde
 document.addEventListener("DOMContentLoaded", () => {
+  // Eski önbellekte kalmış idare PIN kaydını temizle (İdare sekmesi her açılışta giriş ister)
+  localStorage.removeItem("etap_admin_pin");
+
   // Kayıtlı PIN'leri ve son seçilen tahtayı yükle
   const savedPin = localStorage.getItem("etap_teacher_pin");
   if (savedPin) {
@@ -29,16 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
   updateSelectedBoardBadge();
-
-  const savedAdminPin = localStorage.getItem("etap_admin_pin");
-  if (savedAdminPin) {
-    if (document.getElementById("adminPin")) {
-      document.getElementById("adminPin").value = savedAdminPin;
-    }
-    if (document.getElementById("fleetAdminPin")) {
-      document.getElementById("fleetAdminPin").value = savedAdminPin;
-    }
-  }
+  renderAdminGateState();
 
   // Çevrimiçi tahtaları listele
   fetchOnlineBoards();
@@ -53,29 +49,119 @@ document.addEventListener("DOMContentLoaded", () => {
   setupPwa();
 });
 
-function syncAdminPin(sourceId) {
-  const src = document.getElementById(sourceId);
-  if (!src) return;
-  const val = src.value;
-  const otherId = sourceId === "adminPin" ? "fleetAdminPin" : "adminPin";
-  const other = document.getElementById(otherId);
-  if (other && other.value !== val) {
-    other.value = val;
+function getAdminPinValue() {
+  if (isAdminAuthenticated && verifiedAdminPin) {
+    return verifiedAdminPin;
   }
-  if (val.trim()) {
-    localStorage.setItem("etap_admin_pin", val.trim());
+  const el = document.getElementById("adminPin");
+  return (el && el.value.trim()) || "";
+}
+
+function renderAdminGateState() {
+  const gate = document.getElementById("adminLoginGate");
+  const protectedView = document.getElementById("adminProtectedContent");
+  if (!gate || !protectedView) return;
+
+  if (isAdminAuthenticated) {
+    gate.classList.add("hidden");
+    protectedView.classList.remove("hidden");
+  } else {
+    gate.classList.remove("hidden");
+    protectedView.classList.add("hidden");
   }
 }
 
-function getAdminPinValue(preferredInputId = "adminPin") {
-  const preferred = document.getElementById(preferredInputId);
-  const fallbackId = preferredInputId === "adminPin" ? "fleetAdminPin" : "adminPin";
-  const fallback = document.getElementById(fallbackId);
-  const val = (preferred && preferred.value.trim()) || (fallback && fallback.value.trim()) || "";
-  if (val) {
-    localStorage.setItem("etap_admin_pin", val);
+async function verifyAdminLogin() {
+  const input = document.getElementById("adminLoginPin");
+  const errorEl = document.getElementById("adminLoginError");
+  const btn = document.getElementById("btnAdminLogin");
+  if (!input) return;
+
+  const pin = input.value.trim();
+  if (!pin) {
+    if (errorEl) {
+      errorEl.textContent = "Lütfen İdare Giriş Kodunu giriniz.";
+      errorEl.classList.remove("hidden");
+    }
+    input.focus();
+    return;
   }
-  return val;
+
+  if (errorEl) {
+    errorEl.classList.add("hidden");
+    errorEl.textContent = "";
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Doğrulanıyor...";
+  }
+
+  try {
+    const res = await fetch("/api/admin/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin_pin: pin })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      isAdminAuthenticated = true;
+      verifiedAdminPin = pin;
+      const hiddenPinEl = document.getElementById("adminPin");
+      if (hiddenPinEl) hiddenPinEl.value = pin;
+      input.value = "";
+      renderAdminGateState();
+      showToast(data.message || "İdare girişi doğrulandı.", "success");
+
+      const isFleetActive = document.getElementById("adminSubFleetView")?.classList.contains("active");
+      if (isFleetActive) {
+        fetchAdminFleet();
+      } else {
+        fetchOnlineBoards();
+      }
+      fetchSchoolName();
+    } else {
+      const msg = data.detail || "Hatalı Müdür/İdare Giriş Kodu!";
+      if (errorEl) {
+        errorEl.textContent = msg;
+        errorEl.classList.remove("hidden");
+      }
+      showToast(msg, "error");
+      input.select();
+    }
+  } catch (err) {
+    const msg = "Sunucuya bağlanılamadı!";
+    if (errorEl) {
+      errorEl.textContent = msg;
+      errorEl.classList.remove("hidden");
+    }
+    showToast(msg, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🔓 Giriş Yap";
+    }
+  }
+}
+
+function logoutAdminPanel(silent = false) {
+  stopLiveWatch();
+  stopPreviewWall();
+  isAdminAuthenticated = false;
+  verifiedAdminPin = "";
+  const hiddenPinEl = document.getElementById("adminPin");
+  if (hiddenPinEl) hiddenPinEl.value = "";
+  const loginInput = document.getElementById("adminLoginPin");
+  if (loginInput) loginInput.value = "";
+  const errorEl = document.getElementById("adminLoginError");
+  if (errorEl) {
+    errorEl.textContent = "";
+    errorEl.classList.add("hidden");
+  }
+  renderAdminGateState();
+  if (!silent) {
+    showToast("İdare oturumu kapatıldı. 🔒", "info");
+  }
 }
 
 // -------------------------------------------------------------
@@ -94,13 +180,18 @@ function switchTab(tabName) {
   } else if (tabName === "admin") {
     document.querySelector(".tab-btn:nth-child(3)").classList.add("active");
     document.getElementById("adminTab").classList.add("active");
-    const isFleetActive = document.getElementById("adminSubFleetView")?.classList.contains("active");
-    if (isFleetActive) {
-      fetchAdminFleet();
+    renderAdminGateState();
+    if (isAdminAuthenticated) {
+      const isFleetActive = document.getElementById("adminSubFleetView")?.classList.contains("active");
+      if (isFleetActive) {
+        fetchAdminFleet();
+      } else {
+        fetchOnlineBoards();
+      }
+      fetchSchoolName();
     } else {
-      fetchOnlineBoards();
+      setTimeout(() => document.getElementById("adminLoginPin")?.focus(), 50);
     }
-    fetchSchoolName();
   }
 
   // Kamera açıksa ve başka sekmeye geçildiyse kapat
@@ -702,7 +793,7 @@ async function sendPoweroff() {
 // 📢 Müdür / İdare Duyuru Yayını & Bağlantı Gönderme
 // -------------------------------------------------------------
 async function sendBroadcast() {
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue();
   const target = document.getElementById("adminTarget").value;
   const message = document.getElementById("adminMessage").value.trim();
   const linkUrl = (document.getElementById("adminLinkUrl")?.value || "").trim();
@@ -710,6 +801,7 @@ async function sendBroadcast() {
   const duration = parseInt(document.getElementById("adminDuration").value) || 120;
 
   if (!adminPin) {
+    logoutAdminPanel(true);
     showToast("Lütfen İdare PIN kodunu girin!", "error");
     return;
   }
@@ -743,6 +835,7 @@ async function sendBroadcast() {
         document.getElementById("adminLinkLabel").value = "";
       }
     } else {
+      if (res.status === 401) logoutAdminPanel(true);
       showToast(data.detail || "Duyuru iletilemedi!", "error");
     }
   } catch (err) {
@@ -751,10 +844,11 @@ async function sendBroadcast() {
 }
 
 async function clearBroadcast() {
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue();
   const target = document.getElementById("adminTarget").value;
 
   if (!adminPin) {
+    logoutAdminPanel(true);
     showToast("Lütfen İdare PIN kodunu girin!", "error");
     return;
   }
@@ -773,6 +867,7 @@ async function clearBroadcast() {
     if (res.ok && data.success) {
       showToast(data.message || "Aktif duyurular temizlendi!", "success");
     } else {
+      if (res.status === 401) logoutAdminPanel(true);
       showToast(data.detail || "Duyurular temizlenemedi!", "error");
     }
   } catch (err) {
@@ -816,9 +911,8 @@ function sendFileToBoards() {
   const progressText = document.getElementById("fileUploadProgressText");
 
   if (!adminPin) {
+    logoutAdminPanel(true);
     showToast("Lütfen İdare PIN kodunu girin!", "error");
-    const pinEl = document.getElementById("adminPin");
-    if (pinEl) pinEl.focus();
     return;
   }
 
@@ -920,21 +1014,18 @@ async function fetchSchoolName() {
 }
 
 async function sendSchoolNameUpdate() {
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue();
   const schoolName = document.getElementById("schoolNameInput").value.trim();
 
   if (!adminPin) {
+    logoutAdminPanel(true);
     showToast("Lütfen İdare Giriş Kodunu girin!", "error");
-    document.getElementById("adminPin").focus();
     return;
   }
   if (!schoolName) {
     showToast("Lütfen Okul / Kurum adını yazın!", "error");
     return;
   }
-
-  // Pin'i sonraki işlemler için kaydet
-  localStorage.setItem("etap_admin_pin", adminPin);
 
   try {
     const res = await fetch("/api/settings/school", {
@@ -950,10 +1041,96 @@ async function sendSchoolNameUpdate() {
     if (res.ok && data.success) {
       showToast(data.message, "success");
     } else {
+      if (res.status === 401) logoutAdminPanel(true);
       showToast(data.detail || "Kurum adı güncellenemedi!", "error");
     }
   } catch (err) {
     showToast("Sunucu hatası: " + err, "error");
+  }
+}
+
+// -------------------------------------------------------------
+// 🔐 PIN & Güvenlik Ayarları (Öğretmen & İdare PIN Değiştirme)
+// -------------------------------------------------------------
+async function sendPinUpdate() {
+  const currentAdminPin = getAdminPinValue();
+  if (!currentAdminPin) {
+    logoutAdminPanel(true);
+    showToast("Lütfen İdare Giriş Kodunu giriniz!", "error");
+    return;
+  }
+
+  const newTeacherEl = document.getElementById("newTeacherPin");
+  const newAdminEl = document.getElementById("newAdminPin");
+  const confirmAdminEl = document.getElementById("confirmAdminPin");
+  const btn = document.getElementById("btnUpdatePins");
+
+  const newTeacherPin = (newTeacherEl?.value || "").trim();
+  const newAdminPin = (newAdminEl?.value || "").trim();
+  const confirmAdminPin = (confirmAdminEl?.value || "").trim();
+
+  if (!newTeacherPin && !newAdminPin) {
+    showToast("Lütfen değiştirmek istediğiniz yeni PIN kodunu giriniz!", "error");
+    return;
+  }
+
+  const pinRegex = /^\d{4,8}$/;
+  if (newTeacherPin && !pinRegex.test(newTeacherPin)) {
+    showToast("Öğretmen PIN kodu 4 ile 8 hane arasında sadece rakamlardan oluşmalıdır!", "error");
+    newTeacherEl?.focus();
+    return;
+  }
+  if (newAdminPin && !pinRegex.test(newAdminPin)) {
+    showToast("İdare PIN kodu 4 ile 8 hane arasında sadece rakamlardan oluşmalıdır!", "error");
+    newAdminEl?.focus();
+    return;
+  }
+  if (newAdminPin && newAdminPin !== confirmAdminPin) {
+    showToast("Yeni İdare PIN kodları birbiriyle eşleşmiyor!", "error");
+    confirmAdminEl?.focus();
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Güncelleniyor...";
+  }
+
+  try {
+    const res = await fetch("/api/settings/pins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        current_admin_pin: currentAdminPin,
+        new_teacher_pin: newTeacherPin || null,
+        new_admin_pin: newAdminPin || null
+      })
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      if (newAdminPin) {
+        verifiedAdminPin = newAdminPin;
+        const hiddenPinEl = document.getElementById("adminPin");
+        if (hiddenPinEl) hiddenPinEl.value = newAdminPin;
+      }
+      if (newTeacherEl) newTeacherEl.value = "";
+      if (newAdminEl) newAdminEl.value = "";
+      if (confirmAdminEl) confirmAdminEl.value = "";
+      showToast(data.message || "PIN kodları güncellendi!", "success");
+    } else {
+      if (res.status === 401) {
+        logoutAdminPanel(true);
+      }
+      showToast(data.detail || "PIN kodları güncellenemedi!", "error");
+    }
+  } catch (err) {
+    showToast("Sunucu hatası: " + err, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "💾 PIN Kodlarını Güncelle";
+    }
   }
 }
 
@@ -1062,11 +1239,10 @@ function togglePreviewWall() {
 }
 
 function startPreviewWall() {
-  const adminPin = getAdminPinValue("adminPin");
+  const adminPin = getAdminPinValue();
   if (!adminPin) {
+    logoutAdminPanel(true);
     showToast("Önizleme duvarı için önce İdare Giriş Kodunu giriniz!", "error");
-    const pinEl = document.getElementById("adminPin");
-    if (pinEl) pinEl.focus();
     return;
   }
 
@@ -1149,7 +1325,7 @@ async function fetchPreviewWallTick(sessionId) {
     if (!previewWallActive || sessionId !== previewWallSessionId) return;
 
     if (res.status === 401) {
-      stopPreviewWall();
+      logoutAdminPanel(true);
       showToast(data.detail || "Hatalı Müdür/İdare Giriş Kodu!", "error");
       return;
     }
@@ -1188,11 +1364,10 @@ async function fetchPreviewWallTick(sessionId) {
 }
 
 async function openScreenshotModal(boardId, boardName, autoStartLive = false) {
-  const adminPin = getAdminPinValue("adminPin");
+  const adminPin = getAdminPinValue();
   if (!adminPin) {
-    showToast("Lütfen yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    const pinEl = document.getElementById("adminPin");
-    if (pinEl) pinEl.focus();
+    logoutAdminPanel(true);
+    showToast("Lütfen İdare Giriş Kodunu giriniz!", "error");
     return;
   }
 
@@ -1304,7 +1479,11 @@ async function requestBoardScreenshot(boardId, adminPin, options = {}) {
     }
 
     if (silent) {
-      if (res.status === 401 || res.status === 404) {
+      if (res.status === 401) {
+        closeScreenshotModal();
+        logoutAdminPanel(true);
+        showToast(data.detail || "İdare oturumu sona erdi.", "error");
+      } else if (res.status === 404) {
         stopLiveWatch();
         showToast(data.detail || "Canlı izleme durduruldu.", "error");
       } else if (statusEl && liveWatchActive) {
@@ -1317,6 +1496,9 @@ async function requestBoardScreenshot(boardId, adminPin, options = {}) {
     loading.classList.add("hidden");
     showToast(data.detail || "Ekran görüntüsü alınamadı!", "error");
     closeScreenshotModal();
+    if (res.status === 401) {
+      logoutAdminPanel(true);
+    }
     return false;
   } catch (err) {
     if (silent) {
@@ -1440,10 +1622,10 @@ function closeScreenshotModal() {
 // ⚡ Toplu Yönetim Aksiyonları
 // -------------------------------------------------------------
 async function triggerBulkAction(action) {
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue();
   if (!adminPin) {
-    showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    document.getElementById("adminPin").focus();
+    logoutAdminPanel(true);
+    showToast("Lütfen önce İdare Giriş Kodunu giriniz!", "error");
     return;
   }
 
@@ -1470,6 +1652,7 @@ async function triggerBulkAction(action) {
       showToast(data.message, "success");
       fetchOnlineBoards();
     } else {
+      if (res.status === 401) logoutAdminPanel(true);
       showToast(data.detail || "İşlem gerçekleştirilemedi!", "error");
     }
   } catch (err) {
@@ -1478,10 +1661,10 @@ async function triggerBulkAction(action) {
 }
 
 function confirmBulkPoweroff() {
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue();
   if (!adminPin) {
-    showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    document.getElementById("adminPin").focus();
+    logoutAdminPanel(true);
+    showToast("Lütfen önce İdare Giriş Kodunu giriniz!", "error");
     return;
   }
 
@@ -1491,10 +1674,10 @@ function confirmBulkPoweroff() {
 }
 
 function confirmBulkUpdate() {
-  const adminPin = document.getElementById("adminPin").value.trim();
+  const adminPin = getAdminPinValue();
   if (!adminPin) {
-    showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    document.getElementById("adminPin").focus();
+    logoutAdminPanel(true);
+    showToast("Lütfen önce İdare Giriş Kodunu giriniz!", "error");
     return;
   }
 
@@ -1504,11 +1687,10 @@ function confirmBulkUpdate() {
 }
 
 async function triggerSingleBoardUpdate(boardId, boardName) {
-  const adminPin = getAdminPinValue("adminPin");
+  const adminPin = getAdminPinValue();
   if (!adminPin) {
-    showToast("Lütfen önce yukarıdaki İdare Giriş Kodunu giriniz!", "error");
-    const pinEl = document.getElementById("adminPin");
-    if (pinEl) pinEl.focus();
+    logoutAdminPanel(true);
+    showToast("Lütfen önce İdare Giriş Kodunu giriniz!", "error");
     return;
   }
 
@@ -1528,6 +1710,7 @@ async function triggerSingleBoardUpdate(boardId, boardName) {
       showToast(data.message, "success");
       fetchOnlineBoards();
     } else {
+      if (res.status === 401) logoutAdminPanel(true);
       showToast(data.detail || "Güncelleme komutu gönderilemedi!", "error");
     }
   } catch (err) {

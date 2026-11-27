@@ -1535,3 +1535,69 @@ input:focus, select:focus, textarea:focus {
   font-weight: 700;
   text-align: right;
 }
+
+/* -------------------------------------------------------------
+ * 🔐 İdare Giriş Kapısı & Oturum Çubuğu Stilleri
+ * ------------------------------------------------------------- */
+.admin-login-card {
+  text-align: center;
+  padding: 24px 20px;
+}
+
+.admin-login-card .input-group {
+  text-align: left;
+}
+
+.admin-login-icon {
+  font-size: 2.3rem;
+  margin-bottom: 6px;
+}
+
+.admin-login-error {
+  margin-bottom: 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.admin-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  margin-bottom: 12px;
+  border-radius: 13px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.admin-session-badge {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #6ee7b7;
+}
+
+.btn-admin-logout {
+  width: auto;
+  padding: 6px 12px;
+  border-radius: 9px;
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-admin-logout:hover {
+  background: #dc2626;
+  color: #fff;
+  border-color: #dc2626;
+}

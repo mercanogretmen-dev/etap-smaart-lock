@@ -55,7 +55,12 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertIn("btnTogglePreviewWall", res_index.text)
         self.assertIn("adminFileInput", res_index.text)
         self.assertIn("btnSendFile", res_index.text)
-        self.assertIn("v0.6.0", res_index.text)
+        self.assertIn("adminLoginGate", res_index.text)
+        self.assertIn("adminProtectedContent", res_index.text)
+        self.assertIn("newTeacherPin", res_index.text)
+        self.assertIn("newAdminPin", res_index.text)
+        self.assertIn("btnUpdatePins", res_index.text)
+        self.assertIn("v0.7.0", res_index.text)
         self.assertNotIn("customBoardInput", res_index.text)
         self.assertNotIn("boardSelect", res_index.text)
 
@@ -70,6 +75,8 @@ class TestEtapSmartLockSystem(unittest.TestCase):
         self.assertIn("toggleLiveWatch", res_js.text)
         self.assertIn("togglePreviewWall", res_js.text)
         self.assertIn("sendFileToBoards", res_js.text)
+        self.assertIn("verifyAdminLogin", res_js.text)
+        self.assertIn("sendPinUpdate", res_js.text)
 
         # PWA Manifest & Service Worker & İkon testleri
         res_manifest = self.client.get("/manifest.json")
@@ -686,18 +693,18 @@ class TestEtapSmartLockSystem(unittest.TestCase):
                 finally:
                     manager.send_to_board = orig_send
 
-        # 3. version.json ve istemci APP_VERSION uyumu (v0.6.0)
+        # 3. version.json ve istemci APP_VERSION uyumu (v0.7.0)
         with open(os.path.join(PROJECT_ROOT, "version.json"), "r", encoding="utf-8") as vf:
             ver_json = _json.load(vf)
-        self.assertEqual(ver_json.get("version"), "v0.6.0")
+        self.assertEqual(ver_json.get("version"), "v0.7.0")
 
         spec = importlib.util.spec_from_file_location(
-            "kilit_ekrani_v06",
+            "kilit_ekrani_v07",
             os.path.join(PROJECT_ROOT, "client-tahta", "kilit_ekrani.py")
         )
         mod_kilit = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod_kilit)
-        self.assertEqual(mod_kilit.APP_VERSION, "v0.6.0")
+        self.assertEqual(mod_kilit.APP_VERSION, "v0.7.0")
         self.assertEqual(ver_json.get("version"), mod_kilit.APP_VERSION)
 
     # -------------------------------------------------------------------------
@@ -777,12 +784,12 @@ class TestEtapSmartLockSystem(unittest.TestCase):
 
         # 5. İstemci yardımcıları doğrulaması
         spec = importlib.util.spec_from_file_location(
-            "kilit_ekrani_v06_file",
+            "kilit_ekrani_v07_file",
             os.path.join(PROJECT_ROOT, "client-tahta", "kilit_ekrani.py")
         )
         mod_kilit = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod_kilit)
-        self.assertEqual(mod_kilit.APP_VERSION, "v0.6.0")
+        self.assertEqual(mod_kilit.APP_VERSION, "v0.7.0")
         self.assertEqual(
             mod_kilit.derive_http_base_url("wss://etap-smaart-lock.onrender.com/ws/board/"),
             "https://etap-smaart-lock.onrender.com"
@@ -802,6 +809,204 @@ class TestEtapSmartLockSystem(unittest.TestCase):
             self.assertEqual(os.path.basename(p2), "ders (1).pdf")
         finally:
             shutil.rmtree(tmp_desk, ignore_errors=True)
+
+    # -------------------------------------------------------------------------
+    # 12. İdare Giriş Doğrulama & İdareden PIN Değiştirme Testi (v0.7.0)
+    # -------------------------------------------------------------------------
+    def test_12_admin_verify_and_pin_update(self):
+        """POST /api/admin/verify ve POST /api/settings/pins uç noktalarını canlı WebSocket senkronizasyonuyla test eder."""
+        from server.main import DEFAULT_SCHOOL_NAME
+
+        orig_teacher_pin = config.TEACHER_PIN
+        orig_admin_pin = config.ADMIN_PIN
+        orig_school_name = manager.school_name
+        orig_school_custom = manager.school_name_custom
+        orig_tp_custom = manager.teacher_pin_custom
+        orig_ap_custom = manager.admin_pin_custom
+
+        try:
+            # 1. İdare giriş kapısı doğrulaması
+            res_bad = self.client.post("/api/admin/verify", json={"admin_pin": "0000"})
+            self.assertEqual(res_bad.status_code, 401)
+            self.assertIn("Hatalı Müdür/İdare Giriş Kodu", res_bad.json()["detail"])
+
+            res_ok = self.client.post("/api/admin/verify", json={"admin_pin": orig_admin_pin})
+            self.assertEqual(res_ok.status_code, 200)
+            self.assertTrue(res_ok.json()["success"])
+
+            # 2. PIN değiştirme validasyonları
+            res_unauth = self.client.post("/api/settings/pins", json={
+                "current_admin_pin": "0000",
+                "new_teacher_pin": "5678"
+            })
+            self.assertEqual(res_unauth.status_code, 401)
+
+            res_empty = self.client.post("/api/settings/pins", json={
+                "current_admin_pin": orig_admin_pin
+            })
+            self.assertEqual(res_empty.status_code, 400)
+
+            res_invalid = self.client.post("/api/settings/pins", json={
+                "current_admin_pin": orig_admin_pin,
+                "new_teacher_pin": "ab1"
+            })
+            self.assertEqual(res_invalid.status_code, 400)
+
+            # 3. Canlı tahta bağlıyken Öğretmen + İdare PIN güncellemesi
+            with self.client.websocket_connect("/ws/board/pin-b1?name=12-A&version=v0.7.0") as ws1:
+                welcome1 = ws1.receive_json()
+                self.assertEqual(welcome1.get("action"), "welcome")
+                self.assertIn("teacher_pin_custom", welcome1)
+                self.assertIn("school_name_custom", welcome1)
+
+                res_upd = self.client.post("/api/settings/pins", json={
+                    "current_admin_pin": orig_admin_pin,
+                    "new_teacher_pin": "5678",
+                    "new_admin_pin": "8888"
+                })
+                self.assertEqual(res_upd.status_code, 200)
+                upd_data = res_upd.json()
+                self.assertTrue(upd_data["success"])
+                self.assertTrue(upd_data["teacher_pin_updated"])
+                self.assertTrue(upd_data["admin_pin_updated"])
+                self.assertEqual(upd_data["boards_synced"], 1)
+
+                # Tahta WebSocket üzerinden yeni Öğretmen PIN bildirimini almalı
+                pin_cmd = ws1.receive_json()
+                self.assertEqual(pin_cmd.get("action"), "update_teacher_pin")
+                self.assertEqual(pin_cmd.get("teacher_pin"), "5678")
+
+                # Eski şifreler reddedilmeli, yeniler kabul edilmeli
+                self.assertEqual(
+                    self.client.post("/api/unlock", json={"board_id": "12-A", "pin": orig_teacher_pin}).status_code,
+                    401
+                )
+                res_unlock_new = self.client.post("/api/unlock", json={"board_id": "12-A", "pin": "5678"})
+                self.assertEqual(res_unlock_new.status_code, 200)
+                self.assertEqual(ws1.receive_json().get("action"), "unlock")
+
+                self.assertEqual(
+                    self.client.post("/api/admin/verify", json={"admin_pin": orig_admin_pin}).status_code,
+                    401
+                )
+                self.assertEqual(
+                    self.client.post("/api/admin/verify", json={"admin_pin": "8888"}).status_code,
+                    200
+                )
+
+                # Kalıcılık kontrolü (manager.load_settings simülasyonu)
+                config.TEACHER_PIN = "0000"
+                config.ADMIN_PIN = "0000"
+                manager.load_settings()
+                self.assertEqual(config.TEACHER_PIN, "5678")
+                self.assertEqual(config.ADMIN_PIN, "8888")
+
+                # Sonradan bağlanan ikinci tahta hoş geldin mesajında güncel PIN'i almalı
+                with self.client.websocket_connect("/ws/board/pin-b2?name=12-B&version=v0.7.0") as ws2:
+                    welcome2 = ws2.receive_json()
+                    self.assertEqual(welcome2.get("teacher_pin"), "5678")
+                    self.assertIs(welcome2.get("teacher_pin_custom"), True)
+        finally:
+            config.TEACHER_PIN = orig_teacher_pin
+            config.ADMIN_PIN = orig_admin_pin
+            manager.school_name = orig_school_name if orig_school_name else DEFAULT_SCHOOL_NAME
+            manager.school_name_custom = orig_school_custom
+            manager.teacher_pin_custom = orig_tp_custom
+            manager.admin_pin_custom = orig_ap_custom
+            manager.save_settings()
+
+    # -------------------------------------------------------------------------
+    # 13. Kurum Adının Sunucu Yeniden Başlangıcında & İstemcide Kalıcılığı (v0.7.0)
+    # -------------------------------------------------------------------------
+    def test_13_school_name_persistence_across_restart(self):
+        """Sunucu varsayılan kurum adıyla yeniden başlasa dahi tahtadaki özel kurum adının sıfırlanmadığını doğrular."""
+        import importlib.util
+        import json as _json
+        import shutil
+        import tempfile
+        from server.main import DEFAULT_SCHOOL_NAME, SETTINGS_FILE
+
+        orig_school_name = manager.school_name
+        orig_school_custom = manager.school_name_custom
+        orig_tp_custom = manager.teacher_pin_custom
+        orig_ap_custom = manager.admin_pin_custom
+
+        try:
+            # 1. Sunucunun Render uykusu / temiz kurulum sonrası varsayılan kurum adıyla açılmasını simüle et
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as sf:
+                _json.dump({"school_name": DEFAULT_SCHOOL_NAME}, sf, ensure_ascii=False, indent=2)
+            manager.load_settings()
+            self.assertEqual(manager.school_name, DEFAULT_SCHOOL_NAME)
+            self.assertFalse(manager.school_name_custom)
+
+            # 2. Daha önce özel kurum adı kaydedilmiş bir tahta bağlandığında sunucu kendini iyileştirmeli
+            custom_school = "Atatürk Anadolu Lisesi"
+            with self.client.websocket_connect(
+                f"/ws/board/school-b1?name=9-B&version=v0.7.0&school_name={custom_school}"
+            ) as ws1:
+                welcome1 = ws1.receive_json()
+                self.assertEqual(welcome1.get("action"), "welcome")
+                self.assertEqual(welcome1.get("school_name"), custom_school)
+                self.assertIs(welcome1.get("school_name_custom"), True)
+                self.assertEqual(manager.school_name, custom_school)
+                self.assertTrue(manager.school_name_custom)
+
+                res_school = self.client.get("/api/settings/school")
+                self.assertEqual(res_school.status_code, 200)
+                self.assertEqual(res_school.json()["school_name"], custom_school)
+
+                # İkinci tahta (henüz kendi adı varsayılan olsa bile) iyileştirilen gerçek adı almalı
+                with self.client.websocket_connect("/ws/board/school-b2?name=9-C&version=v0.7.0") as ws2:
+                    welcome2 = ws2.receive_json()
+                    self.assertEqual(welcome2.get("school_name"), custom_school)
+                    self.assertIs(welcome2.get("school_name_custom"), True)
+
+            # 3. İstemci load_config() çoklu ayar dosyası koruma testi
+            spec = importlib.util.spec_from_file_location(
+                "kilit_ekrani_v07_cfg",
+                os.path.join(PROJECT_ROOT, "client-tahta", "kilit_ekrani.py")
+            )
+            mod_kilit = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod_kilit)
+
+            tmp_dir = tempfile.mkdtemp(prefix="etap_cfg_")
+            orig_usr = mod_kilit.USER_CONFIG_PATH
+            orig_sys = mod_kilit.SYSTEM_CONFIG_PATH
+            orig_loc = mod_kilit.LOCAL_CONFIG_PATH
+            try:
+                usr_ini = os.path.join(tmp_dir, "user_config.ini")
+                sys_ini = os.path.join(tmp_dir, "sys_config.ini")
+                loc_ini = os.path.join(tmp_dir, "missing_config.ini")
+
+                with open(usr_ini, "w", encoding="utf-8") as f:
+                    f.write(f"[GENEL]\nokul_adi = {custom_school}\nogretmen_pin = 5678\n")
+                # Eski mtime ver
+                os.utime(usr_ini, (time.time() - 3600, time.time() - 3600))
+
+                with open(sys_ini, "w", encoding="utf-8") as f:
+                    f.write(f"[GENEL]\nokul_adi = {mod_kilit.DEFAULT_SCHOOL_NAME}\nogretmen_pin = 1234\n")
+                # Yeni mtime ver (ör. paket güncellemesi simülasyonu)
+                now_ts = time.time()
+                os.utime(sys_ini, (now_ts, now_ts))
+
+                mod_kilit.USER_CONFIG_PATH = usr_ini
+                mod_kilit.SYSTEM_CONFIG_PATH = sys_ini
+                mod_kilit.LOCAL_CONFIG_PATH = loc_ini
+
+                loaded = mod_kilit.load_config()
+                self.assertEqual(loaded.get("GENEL", "okul_adi"), custom_school)
+                self.assertEqual(loaded.get("GENEL", "ogretmen_pin"), "5678")
+            finally:
+                mod_kilit.USER_CONFIG_PATH = orig_usr
+                mod_kilit.SYSTEM_CONFIG_PATH = orig_sys
+                mod_kilit.LOCAL_CONFIG_PATH = orig_loc
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+        finally:
+            manager.school_name = DEFAULT_SCHOOL_NAME if not orig_school_name else orig_school_name
+            manager.school_name_custom = orig_school_custom
+            manager.teacher_pin_custom = orig_tp_custom
+            manager.admin_pin_custom = orig_ap_custom
+            manager.save_settings()
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 UPLOAD_TTL_SECONDS = 900  # 15 dakika
 MAX_STORED_UPLOADS = 10
+DEFAULT_SCHOOL_NAME = "T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ"
 ALLOWED_FILE_EXTENSIONS = {
     ".pdf", ".ppt", ".pptx", ".doc", ".docx", ".xls", ".xlsx",
     ".mp3", ".wav", ".ogg", ".m4a", ".mp4", ".webm", ".mkv", ".mov",
@@ -45,9 +46,9 @@ def sanitize_filename(name: str) -> str:
     return f"{stem[:max_stem_len]}{ext}"
 
 try:
-    import config
-except ImportError:
     from . import config
+except ImportError:
+    import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ETAP-Server")
@@ -80,8 +81,12 @@ class BoardConnectionManager:
         self.board_versions: Dict[str, str] = {}
         # board_id -> canlı güncelleme/durum detay mesajı
         self.board_update_msg: Dict[str, str] = {}
-        # Merkezi Okul / Kurum Adı (Tüm bağlı tahtalara yayınlanır)
-        self.school_name: str = self.load_school_name()
+        # Merkezi Okul / Kurum Adı ve PIN Ayarları (Tüm bağlı tahtalara yayınlanır)
+        self.school_name: str = DEFAULT_SCHOOL_NAME
+        self.school_name_custom: bool = False
+        self.teacher_pin_custom: bool = False
+        self.admin_pin_custom: bool = False
+        self.load_settings()
         # Bekleyen ekran görüntüsü yanıtları (request_id -> asyncio.Future)
         self.pending_screenshots: Dict[str, asyncio.Future] = {}
         # Sunucuda tutulan aktif duyuru (yeni bağlanan tahtalara da iletilir)
@@ -117,23 +122,66 @@ class BoardConnectionManager:
                 except Exception:
                     pass
 
-    def load_school_name(self) -> str:
+    def load_settings(self):
+        """Kalıcı ayarları (okul adı, öğretmen/idare PIN) settings.json ve ortam değişkenlerinden yükler."""
+        data = {}
         if os.path.exists(SETTINGS_FILE):
             try:
                 with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return data.get("school_name", "T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ")
-            except Exception:
-                pass
-        return "T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ"
+                    data = json.load(f) or {}
+            except Exception as e:
+                logger.error(f"Ayarlar okunamadı: {e}")
 
-    def save_school_name(self, name: str):
-        self.school_name = name
+        env_school = getattr(config, "SCHOOL_NAME", "").strip()
+        if env_school:
+            self.school_name = env_school
+            self.school_name_custom = True
+        else:
+            saved_name = str(data.get("school_name", "")).strip()
+            if saved_name:
+                self.school_name = saved_name
+                self.school_name_custom = bool(data.get("school_name_custom")) or (saved_name != DEFAULT_SCHOOL_NAME)
+            else:
+                self.school_name = DEFAULT_SCHOOL_NAME
+                self.school_name_custom = False
+
+        saved_teacher_pin = str(data.get("teacher_pin", "")).strip()
+        if saved_teacher_pin:
+            config.TEACHER_PIN = saved_teacher_pin
+            self.teacher_pin_custom = bool(data.get("teacher_pin_custom", True))
+        else:
+            self.teacher_pin_custom = False
+
+        saved_admin_pin = str(data.get("admin_pin", "")).strip()
+        if saved_admin_pin:
+            config.ADMIN_PIN = saved_admin_pin
+            self.admin_pin_custom = bool(data.get("admin_pin_custom", True))
+        else:
+            self.admin_pin_custom = False
+
+    def save_settings(self):
+        """Okul adı ve özelleştirilmiş PIN ayarlarını settings.json içine kalıcı kaydeder."""
+        payload = {
+            "school_name": self.school_name,
+            "school_name_custom": self.school_name_custom,
+        }
+        if self.teacher_pin_custom:
+            payload["teacher_pin"] = config.TEACHER_PIN
+            payload["teacher_pin_custom"] = True
+        if self.admin_pin_custom:
+            payload["admin_pin"] = config.ADMIN_PIN
+            payload["admin_pin_custom"] = True
+
         try:
             with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump({"school_name": name}, f, ensure_ascii=False, indent=2)
+                json.dump(payload, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"Ayarlar kaydedilemedi: {e}")
+
+    def save_school_name(self, name: str, custom: bool = True):
+        self.school_name = name.strip()
+        self.school_name_custom = bool(custom)
+        self.save_settings()
 
     async def connect(self, board_id: str, websocket: WebSocket, name: Optional[str] = None, version: Optional[str] = None):
         await websocket.accept()
@@ -292,6 +340,14 @@ class BoardUpdateRequest(BaseModel):
     board_id: str
     admin_pin: str
 
+class AdminVerifyRequest(BaseModel):
+    admin_pin: str
+
+class PinUpdateRequest(BaseModel):
+    current_admin_pin: str
+    new_teacher_pin: Optional[str] = None
+    new_admin_pin: Optional[str] = None
+
 # -------------------------------------------------------------
 # 🌐 WebSocket Uç Noktası (Pardus ETAP Tahtaları Buraya Bağlanır)
 # -------------------------------------------------------------
@@ -299,15 +355,29 @@ class BoardUpdateRequest(BaseModel):
 async def websocket_board_endpoint(websocket: WebSocket, board_id: str, name: Optional[str] = None):
     query_name = websocket.query_params.get("name")
     query_version = websocket.query_params.get("version")
+    query_school = (websocket.query_params.get("school_name") or "").strip()
     initial_name = query_name or name or board_id
     await manager.connect(board_id, websocket, initial_name, version=query_version)
     try:
-        # Tahtaya ilk bağlantı onayı ve merkezi okul adını gönder
+        # Sunucu Render vb. yeniden başlatmadan varsayılan kurum adıyla açıldıysa,
+        # bağlanan tahtadaki kayıtlı gerçek kurum adını sunucuya otomatik geri yükle
+        if (
+            not manager.school_name_custom
+            and query_school
+            and query_school != DEFAULT_SCHOOL_NAME
+        ):
+            manager.save_school_name(query_school, custom=True)
+            logger.info(f"🏫 Kurum adı tahta bildiriminden geri yüklendi: '{query_school}'")
+
+        # Tahtaya ilk bağlantı onayı ve merkezi okul/PIN durumunu gönder
         await websocket.send_text(json.dumps({
             "action": "welcome",
             "board_id": board_id,
             "name": manager.board_names.get(board_id, initial_name),
             "school_name": manager.school_name,
+            "school_name_custom": manager.school_name_custom,
+            "teacher_pin": config.TEACHER_PIN,
+            "teacher_pin_custom": manager.teacher_pin_custom,
             "message": f"Bağlantı kuruldu: {manager.board_names.get(board_id, initial_name)}"
         }))
 
@@ -628,6 +698,85 @@ async def update_school_settings(req: SchoolSettingsRequest):
         "success": True,
         "school_name": name,
         "message": f"Okul adı '{name}' olarak güncellendi ve {count} bağlı tahtaya anında iletildi! 🏫"
+    }
+
+
+@app.post("/api/admin/verify")
+async def verify_admin_login(req: AdminVerifyRequest):
+    """Mobil İdare Paneli giriş şifresini doğrular"""
+    if (req.admin_pin or "").strip() != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+    return {
+        "success": True,
+        "message": "İdare girişi doğrulandı."
+    }
+
+
+@app.post("/api/settings/pins")
+async def update_security_pins(req: PinUpdateRequest):
+    """İdare panelinden Öğretmen PIN ve/veya İdare PIN kodlarını günceller"""
+    if (req.current_admin_pin or "").strip() != config.ADMIN_PIN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Hatalı Müdür/İdare Giriş Kodu!"
+        )
+
+    new_teacher = (req.new_teacher_pin or "").strip()
+    new_admin = (req.new_admin_pin or "").strip()
+
+    if not new_teacher and not new_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="En az bir yeni PIN kodu giriniz!"
+        )
+
+    if new_teacher and not re.fullmatch(r"\d{4,8}", new_teacher):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PIN kodu 4 ile 8 hane arasında sadece rakamlardan oluşmalıdır!"
+        )
+    if new_admin and not re.fullmatch(r"\d{4,8}", new_admin):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PIN kodu 4 ile 8 hane arasında sadece rakamlardan oluşmalıdır!"
+        )
+
+    teacher_updated = False
+    admin_updated = False
+    boards_synced = 0
+
+    if new_teacher:
+        config.TEACHER_PIN = new_teacher
+        manager.teacher_pin_custom = True
+        teacher_updated = True
+        boards_synced = await manager.broadcast_all({
+            "action": "update_teacher_pin",
+            "teacher_pin": new_teacher,
+            "timestamp": time.time(),
+        })
+
+    if new_admin:
+        config.ADMIN_PIN = new_admin
+        manager.admin_pin_custom = True
+        admin_updated = True
+
+    manager.save_settings()
+
+    msg_parts = []
+    if teacher_updated:
+        msg_parts.append(f"Öğretmen PIN güncellendi ({boards_synced} tahtaya senkronize edildi)")
+    if admin_updated:
+        msg_parts.append("İdare PIN güncellendi")
+
+    return {
+        "success": True,
+        "teacher_pin_updated": teacher_updated,
+        "admin_pin_updated": admin_updated,
+        "boards_synced": boards_synced,
+        "message": " ve ".join(msg_parts) + "! 🔐"
     }
 
 # -------------------------------------------------------------

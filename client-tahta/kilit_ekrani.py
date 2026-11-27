@@ -43,7 +43,9 @@ from PyQt6.QtWidgets import (
 APP_NAME = "Tahta Kilit"
 APP_SUBTITLE = "Etkileşimli Tahta Kilit Uygulaması"
 DEVELOPER_NAME = "MERCAN ROBOTİK"
-APP_VERSION = "v0.6.0"
+APP_VERSION = "v0.7.0"
+DEFAULT_SCHOOL_NAME = "T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ"
+DEFAULT_TEACHER_PIN = "1234"
 
 # Platforma duyarlı kalıcı ayar dizinleri
 if sys.platform == "win32":
@@ -109,11 +111,38 @@ def load_config():
     if "GENEL" not in config:
         config["GENEL"] = {}
 
+    # En yeni dosya varsayılan kurum adı veya PIN taşıyorsa (örn. paket güncellemesi sonrası),
+    # diğer kalıcı ayar dosyalarındaki özelleştirilmiş değerleri koru
+    curr_school = str(config["GENEL"].get("okul_adi", "")).strip()
+    curr_tpin = str(config["GENEL"].get("ogretmen_pin", "")).strip()
+    if len(existing_paths) > 1 and (
+        not curr_school or curr_school == DEFAULT_SCHOOL_NAME
+        or not curr_tpin or curr_tpin == DEFAULT_TEACHER_PIN
+    ):
+        for p in existing_paths[1:]:
+            alt_cfg = configparser.ConfigParser()
+            try:
+                alt_cfg.read(p, encoding="utf-8")
+                if "GENEL" not in alt_cfg:
+                    continue
+                alt_school = str(alt_cfg["GENEL"].get("okul_adi", "")).strip()
+                if (not curr_school or curr_school == DEFAULT_SCHOOL_NAME) and alt_school and alt_school != DEFAULT_SCHOOL_NAME:
+                    config["GENEL"]["okul_adi"] = alt_school
+                    curr_school = alt_school
+                    print(f"[CONFIG] Ozellestirilmis kurum adi korundu [{p}]: {alt_school}")
+                alt_tpin = str(alt_cfg["GENEL"].get("ogretmen_pin", "")).strip()
+                if (not curr_tpin or curr_tpin == DEFAULT_TEACHER_PIN) and alt_tpin and alt_tpin != DEFAULT_TEACHER_PIN:
+                    config["GENEL"]["ogretmen_pin"] = alt_tpin
+                    curr_tpin = alt_tpin
+                    print(f"[CONFIG] Ozellestirilmis ogretmen PIN korundu [{p}]")
+            except Exception:
+                pass
+
     defaults = {
         "sinif_adi": "9-A",
-        "okul_adi": "T.C. MİLLÎ EĞİTİM BAKANLIĞI — ETKİLEŞİMLİ TAHTA SİSTEMİ",
+        "okul_adi": DEFAULT_SCHOOL_NAME,
         "sunucu_ws_url": "wss://etap-smaart-lock.onrender.com/ws/board/",
-        "ogretmen_pin": "1234",
+        "ogretmen_pin": DEFAULT_TEACHER_PIN,
         "yonetici_sifre": "admin123",
         "cihaz_id": "",
         "hardware_elements": ""
@@ -311,11 +340,12 @@ class WebSocketClientThread(QThread):
     signal_status = pyqtSignal(bool)           # True = Çevrimiçi, False = Çevrimdışı
     signal_command = pyqtSignal(dict)          # Sunucudan gelen kilit/duyuru komutları
 
-    def __init__(self, ws_url: str, device_id: str, board_name: str):
+    def __init__(self, ws_url: str, device_id: str, board_name: str, school_name: str = ""):
         super().__init__()
         self.raw_ws_url = ws_url.rstrip("/")
         self.device_id = device_id
         self.board_name = board_name
+        self.school_name = (school_name or "").strip()
         self.running = True
         self.ws = None
         self.loop = None
@@ -325,7 +355,15 @@ class WebSocketClientThread(QThread):
         import urllib.parse
         encoded_name = urllib.parse.quote(self.board_name)
         encoded_ver = urllib.parse.quote(APP_VERSION)
-        self.ws_url = f"{self.raw_ws_url}/{self.device_id}?name={encoded_name}&version={encoded_ver}"
+        encoded_school = urllib.parse.quote(self.school_name or "")
+        self.ws_url = (
+            f"{self.raw_ws_url}/{self.device_id}"
+            f"?name={encoded_name}&version={encoded_ver}&school_name={encoded_school}"
+        )
+
+    def update_school_name_param(self, school_name: str):
+        self.school_name = (school_name or "").strip()
+        self._build_url()
 
     def run(self):
         if not websockets:
@@ -3777,7 +3815,9 @@ class LockScreenWindow(QMainWindow):
     # 📡 Ağ ve WebSocket Olayları
     # -------------------------------------------------------------
     def init_network(self):
-        self.ws_thread = WebSocketClientThread(self.sunucu_url, self.cihaz_id, self.sinif_adi)
+        self.ws_thread = WebSocketClientThread(
+            self.sunucu_url, self.cihaz_id, self.sinif_adi, school_name=self.okul_adi
+        )
         self.ws_thread.signal_status.connect(self.on_network_status_change)
         self.ws_thread.signal_command.connect(self.on_server_command)
         self.ws_thread.start()
@@ -3803,12 +3843,21 @@ class LockScreenWindow(QMainWindow):
     def on_server_command(self, data: dict):
         action = data.get("action")
         if action == "welcome":
-            if "school_name" in data and data["school_name"].strip():
-                self.update_school_name(data["school_name"].strip())
+            incoming_school = (data.get("school_name") or "").strip()
+            school_is_custom = bool(data.get("school_name_custom", False))
+            if incoming_school and (school_is_custom or self.okul_adi == DEFAULT_SCHOOL_NAME):
+                self.update_school_name(incoming_school)
+            incoming_tpin = str(data.get("teacher_pin") or "").strip()
+            if incoming_tpin and bool(data.get("teacher_pin_custom", False)):
+                self.update_teacher_pin(incoming_tpin)
         elif action == "update_school_name":
             new_school = data.get("school_name", "").strip()
             if new_school:
                 self.update_school_name(new_school)
+        elif action == "update_teacher_pin":
+            new_pin = str(data.get("teacher_pin", "")).strip()
+            if new_pin:
+                self.update_teacher_pin(new_pin)
         elif action == "unlock":
             self.unlock_board(by="Mobil Uygulama")
         elif action == "lock":
@@ -3989,6 +4038,17 @@ class LockScreenWindow(QMainWindow):
         self._fit_school_label_font()
         if hasattr(self, "settings_overlay") and self.settings_overlay:
             self.settings_overlay.input_school.setText(self.okul_adi)
+        if hasattr(self, "ws_thread") and self.ws_thread:
+            self.ws_thread.update_school_name_param(self.okul_adi)
+
+    def update_teacher_pin(self, new_pin: str):
+        """Sunucudan veya idare panelinden gelen yeni Öğretmen PIN kodunu kaydeder."""
+        clean_pin = (new_pin or "").strip()
+        if not re.fullmatch(r"\d{4,8}", clean_pin) or clean_pin == self.ogretmen_pin:
+            return
+        self.ogretmen_pin = clean_pin
+        self.cfg.set("GENEL", "ogretmen_pin", self.ogretmen_pin)
+        save_config(self.cfg)
 
     def show_announcement(self, message: str, duration_sec: int = 120, link_url: str = "", link_label: str = ""):
         play_alert_sound()
@@ -4194,6 +4254,7 @@ class LockScreenWindow(QMainWindow):
         else:
             updated = False
             if hasattr(self, "ws_thread") and self.ws_thread:
+                self.ws_thread.update_school_name_param(self.okul_adi)
                 updated = self.ws_thread.send_name_update(self.sinif_adi)
             if not updated:
                 if hasattr(self, "ws_thread") and self.ws_thread:

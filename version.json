@@ -1,12 +1,11 @@
 {
-  "version": "v0.6.0",
+  "version": "v0.7.0",
   "app_name": "Tahta Kilit",
-  "release_date": "2026-11-24",
-  "description": "Yönetici Masaüstüne Dosya Gönderme (PDF/PPTX/DOCX/MP3/Video), Akıllı Canlı İzleme, Önizleme Duvarı ve Tıklanabilir Duyurular.",
+  "release_date": "2026-11-27",
+  "description": "İdare Paneli Şifre Giriş Kapısı, İdareden Öğretmen/İdare PIN Değiştirme (Canlı Tahta Eşitleme) ve Kalıcı Okul/Kurum Adı Koruması.",
   "changelog": [
-    "İdare → Toplu Yönetim & Duyuru paneline '📁 Masaüstüne Dosya Gönder' kartı eklendi (PDF, PPTX, DOCX, XLSX, MP3, MP4 vb. — maks. 25 MB, canlı yükleme yüzdesi).",
-    "Sunucuda RAM dostu 64 KB akışlı yükleme (POST /api/files/send) ve geçici indirme uç noktası (GET /api/files/download/{file_id}; 15 dk TTL + maks. 10 dosya otomatik temizlik) eklendi.",
-    "Tahta istemcisine arka plan FileDownloadThread, Türkçe Pardus ~/Masaüstü / ~/Desktop otomatik tespiti, çakışmasız kaydetme ve opsiyonel otomatik dosya açma (open_after) eklendi.",
-    "v0.5.0 özellikleri (Smart Diff canlı izleme, 2 sütunlu Önizleme Duvarı, tıklanabilir duyurular ve 4 satırlık 1B öğretmen ekranı) korunarak v0.6.0'a yükseltildi."
+    "Mobil web arayüzünde 'İdare' sekmesine şifre giriş ekranı (POST /api/admin/verify) ve 'Çıkış' butonu eklendi; İdare PIN tarayıcı önbelleğinde açık bırakılmaz.",
+    "İdare → Toplu Yönetim & Duyuru altına '🔐 PIN & Güvenlik Ayarları' kartı (POST /api/settings/pins) eklendi; Öğretmen PIN ve İdare PIN buradan değiştirilebilir ve yeni Öğretmen PIN bağlı tahtalara canlı senkronize edilir.",
+    "Tahta istemcisi ve sunucu el sıkışmasında (self-healing school_name + multi-config load_config) kurum adının client açılışında veya Render yeniden başlangıcında varsayılan MEB adına sıfırlanması kalıcı olarak düzeltildi."
   ]
 }

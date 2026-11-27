@@ -156,24 +156,38 @@
 
     <!-- SEKME 3: MÜDÜR / İDARE YÖNETİM & ANONS PANELİ -->
     <section id="adminTab" class="tab-content">
-      <!-- İdare PIN Doğrulama Girişi -->
-      <div class="card admin-card mb-3" style="margin-bottom: 12px;">
-        <div class="input-group" style="margin-bottom: 0;">
-          <label for="adminPin">🔑 İdare Giriş Kodu:</label>
-          <input type="password" id="adminPin" placeholder="Örn: 9999" maxlength="8" inputmode="numeric" oninput="syncAdminPin('adminPin')">
-          <small class="hint">Ekran izleme, güncelleme ve anons işlemleri için gereklidir (tarayıcınızda hatırlanır).</small>
+      <!-- İdare Giriş Ekranı (Şifre Doğrulama Kapısı) -->
+      <div id="adminLoginGate" class="card admin-card admin-login-card">
+        <div class="admin-login-icon">🔐</div>
+        <h3>İdare Paneli Girişi</h3>
+        <p class="hint">Canlı tahta izleme, toplu yönetim, dosya gönderimi ve şifre ayarlarına erişmek için idare şifresini giriniz.</p>
+        <div class="input-group" style="margin-top: 12px;">
+          <label for="adminLoginPin">🔑 İdare Giriş Kodu:</label>
+          <input type="password" id="adminLoginPin" placeholder="İdare PIN Kodunu Giriniz" maxlength="8" inputmode="numeric" onkeydown="if(event.key==='Enter') verifyAdminLogin()">
         </div>
+        <div id="adminLoginError" class="admin-login-error hidden"></div>
+        <button id="btnAdminLogin" type="button" class="btn btn-primary" onclick="verifyAdminLogin()">
+          🔓 Giriş Yap
+        </button>
       </div>
 
-      <!-- İdare İçi Alt Segment (Hap Butonlar) -->
-      <div class="admin-sub-tabs">
-        <button id="adminSubFleetBtn" class="admin-sub-btn active" type="button" onclick="switchAdminSubTab('fleet')">
-          🖥️ Canlı Tahtalar
-        </button>
-        <button id="adminSubManageBtn" class="admin-sub-btn" type="button" onclick="switchAdminSubTab('manage')">
-          ⚡ Toplu Yönetim & Duyuru
-        </button>
-      </div>
+      <!-- Doğrulanmış İdare Paneli İçeriği -->
+      <div id="adminProtectedContent" class="hidden">
+        <div class="admin-session-bar">
+          <span class="admin-session-badge">🛡️ İdare Oturumu Açık</span>
+          <button type="button" class="btn-admin-logout" onclick="logoutAdminPanel()">🔒 Çıkış</button>
+        </div>
+        <input type="hidden" id="adminPin" value="">
+
+        <!-- İdare İçi Alt Segment (Hap Butonlar) -->
+        <div class="admin-sub-tabs">
+          <button id="adminSubFleetBtn" class="admin-sub-btn active" type="button" onclick="switchAdminSubTab('fleet')">
+            🖥️ Canlı Tahtalar
+          </button>
+          <button id="adminSubManageBtn" class="admin-sub-btn" type="button" onclick="switchAdminSubTab('manage')">
+            ⚡ Toplu Yönetim & Duyuru
+          </button>
+        </div>
 
       <!-- ALT SEKME A: CANLI TAHTALAR & EKRAN İZLEME -->
       <div id="adminSubFleetView" class="admin-sub-view active">
@@ -305,7 +319,7 @@
         </div>
 
         <!-- KART 4: OKUL / KURUM ADI BELİRLEME -->
-        <div class="card admin-card">
+        <div class="card admin-card" style="margin-bottom: 14px;">
           <h3>🏫 Okul / Kurum Adı Belirleme</h3>
           <p class="hint">Tüm akıllı tahtaların üst bandındaki kurum adını tek tıkla toplu olarak güncelleyin.</p>
 
@@ -318,13 +332,39 @@
             💾 Kurum Adını Tüm Tahtalara Gönder & Kaydet
           </button>
         </div>
+
+        <!-- KART 5: PIN & GÜVENLİK AYARLARI -->
+        <div class="card admin-card">
+          <h3>🔐 PIN & Güvenlik Ayarları</h3>
+          <p class="hint">Öğretmen veya İdare giriş kodunu değiştirebilirsiniz. Boş bıraktığınız alan değişmez; yeni Öğretmen PIN kodu bağlı tahtalara da anında eşitlenir.</p>
+
+          <div class="input-group">
+            <label for="newTeacherPin">👨‍🏫 Yeni Öğretmen PIN Kodu:</label>
+            <input type="password" id="newTeacherPin" placeholder="Yeni Öğretmen PIN (4-8 rakam)" maxlength="8" inputmode="numeric">
+          </div>
+
+          <div class="input-group">
+            <label for="newAdminPin">🔑 Yeni İdare Giriş Kodu:</label>
+            <input type="password" id="newAdminPin" placeholder="Yeni İdare PIN (4-8 rakam)" maxlength="8" inputmode="numeric">
+          </div>
+
+          <div class="input-group">
+            <label for="confirmAdminPin">🔁 Yeni İdare Giriş Kodu (Tekrar):</label>
+            <input type="password" id="confirmAdminPin" placeholder="Yeni İdare PIN tekrar" maxlength="8" inputmode="numeric">
+          </div>
+
+          <button id="btnUpdatePins" type="button" class="btn btn-primary" onclick="sendPinUpdate()" style="background: linear-gradient(135deg, #6366f1, #4f46e5);">
+            💾 PIN Kodlarını Güncelle
+          </button>
+        </div>
+      </div>
       </div>
     </section>
 
     <!-- Geliştirici Alt Bilgi Rozeti -->
     <footer style="display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 16px; margin-top:8px; color:#94a3b8; font-size:0.78rem; border-top:1px solid rgba(56,189,248,0.15);">
       <img src="/icons/mercan_robotik_icon.png" alt="Mercan Robotik" style="width:24px; height:24px; border-radius:6px;">
-      <span>Geliştirici: <strong style="color:#38bdf8;">MERCAN</strong> <strong style="color:#ff5e4d;">ROBOTİK</strong> • 🛡️ ET Güvenliği Aktif • v0.6.0</span>
+      <span>Geliştirici: <strong style="color:#38bdf8;">MERCAN</strong> <strong style="color:#ff5e4d;">ROBOTİK</strong> • 🛡️ ET Güvenliği Aktif • v0.7.0</span>
     </footer>
 
     <!-- Güç Kapatma Onay Modalı -->

@@ -11,3 +11,6 @@ SECRET_SALT = os.getenv("SECRET_SALT", "etap-super-secret-salt-2026")
 
 # Dinamik QR Kod geçerlilik süresi (Saniye)
 QR_VALIDITY_SECONDS = int(os.getenv("QR_VALIDITY_SECONDS", "45"))
+
+# Merkezi Okul / Kurum Adı (İsteğe bağlı ortam değişkeni sabitlemesi)
+SCHOOL_NAME = os.getenv("SCHOOL_NAME", "").strip()
