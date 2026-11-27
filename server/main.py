@@ -8,7 +8,7 @@ import time
 import uuid
 from urllib.parse import urlparse
 from typing import Dict, List, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, status, UploadFile, File, Form
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -63,6 +63,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    """Mobil PWA/tarayıcılarda eski JS/CSS ile yeni HTML'in karışmasını önler."""
+    response = await call_next(request)
+    path = request.url.path or "/"
+    if path == "/" or path.endswith((".html", ".js", ".css")):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 # -------------------------------------------------------------
 # 📡 Canlı Tahta WebSocket Yöneticisi (Connection Manager)

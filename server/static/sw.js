@@ -1,10 +1,10 @@
 // ETAP Akıllı Kilit - Service Worker (PWA Desteği & Çevrimdışı Mod)
-const CACHE_NAME = 'etap-smartlock-v0.7.0';
+const CACHE_NAME = 'etap-smartlock-v0.7.0-r2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/style.css',
-  '/app.js',
+  '/style.css?v=0.7.0',
+  '/app.js?v=0.7.0',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-cache' })
       .then((networkResponse) => {
         // Ağdan başarıyla geldiyse önbelleği güncelle ve yanıtı dön
         if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
